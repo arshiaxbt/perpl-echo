@@ -85,6 +85,7 @@ NEXT_PUBLIC_APP_URL=https://<your-vercel-domain>
 NEXT_PUBLIC_ENABLE_WALLET_FEATURES=false
 NEXT_PUBLIC_MONAD_CHAIN_ID=143
 NEXT_PUBLIC_MONAD_RPC_URL=https://rpc.monad.xyz
+ONCHAIN_INDEXER_ENABLED=false
 ```
 
 Redeploy after saving env vars.
@@ -120,6 +121,9 @@ ONCHAIN_POLL_INTERVAL_MS=5000
 SNAPSHOT_COLLECTOR_ENABLED=true
 WORKER_ENABLED=true
 COLLECTOR_INTERVAL_MS=300000
+BACKFILL_ON_START=false
+BACKFILL_DAYS=30
+BACKFILL_MIN_SNAPSHOTS=100
 ```
 
 ### 10. Start Worker
@@ -194,6 +198,10 @@ No on-chain data appears
 
 Check `MONAD_RPC_URL`, `PERPL_CONTRACT_ADDRESSES`, and `ONCHAIN_INDEXER_ENABLED=true`. The app still works with public Perpl snapshot data if on-chain indexing is unavailable.
 
+Rarity or confidence says collecting data
+
+This is expected until the worker has collected enough history. Rarity and market memory require at least 24 hours of snapshots and 100 snapshots. Echo confidence requires at least 10 historical matches with forward outcomes.
+
 ## Option B: GitHub + Supabase/Neon + Vercel + VPS Worker
 
 ### 1. Create GitHub Repo
@@ -244,6 +252,7 @@ NEXT_PUBLIC_APP_URL=https://<your-vercel-domain>
 NEXT_PUBLIC_ENABLE_WALLET_FEATURES=false
 NEXT_PUBLIC_MONAD_CHAIN_ID=143
 NEXT_PUBLIC_MONAD_RPC_URL=https://rpc.monad.xyz
+ONCHAIN_INDEXER_ENABLED=false
 ```
 
 Redeploy the Vercel project.
@@ -275,6 +284,9 @@ ONCHAIN_POLL_INTERVAL_MS=5000
 SNAPSHOT_COLLECTOR_ENABLED=true
 WORKER_ENABLED=true
 COLLECTOR_INTERVAL_MS=300000
+BACKFILL_ON_START=false
+BACKFILL_DAYS=30
+BACKFILL_MIN_SNAPSHOTS=100
 ```
 
 ### 10. Start Worker

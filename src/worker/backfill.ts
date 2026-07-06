@@ -9,8 +9,7 @@ const RESOLUTION_SECONDS = 300;
 const CHUNK_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_DAYS = Number(process.env.BACKFILL_DAYS ?? 30);
 
-async function main() {
-  const days = Number(process.argv[2] ?? DEFAULT_DAYS);
+export async function backfillHistoricalCandles(days = DEFAULT_DAYS) {
   const client = new PerplApiClient();
   const context = await client.getContext();
   const activeMarkets = context.markets.filter((market) => market.config?.is_open !== false);
@@ -74,6 +73,11 @@ async function main() {
     console.log(`[backfill] ${symbol} saved=${saved}`);
     await classifyMissingRegimes(market.id);
   }
+}
+
+async function main() {
+  const days = Number(process.argv[2] ?? DEFAULT_DAYS);
+  await backfillHistoricalCandles(days);
 }
 
 async function fetchCandleHistory(client: PerplApiClient, marketId: number, startMs: number, endMs: number) {
@@ -159,11 +163,13 @@ function isFiniteNumber(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-main()
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+if (require.main === module) {
+  main()
+    .catch((error) => {
+      console.error(error);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}

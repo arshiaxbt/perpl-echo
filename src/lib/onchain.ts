@@ -2,12 +2,16 @@ import { createPublicClient, http, type Address, type Log } from "viem";
 import { env } from "./env";
 import { prisma } from "./prisma";
 import { jsonSafe } from "./json";
+import type { OnchainOperationalState } from "./data-quality";
 
 export type OnchainIndexerStatus = {
   enabled: boolean;
   configured: boolean;
+  state: OnchainOperationalState;
   rpcConnected: boolean;
   latestProcessedBlock: string | null;
+  latestNetworkBlock: string | null;
+  blockLag: string | null;
   eventCount: number;
   message: string | null;
 };
@@ -27,30 +31,77 @@ export async function getOnchainStatus(): Promise<OnchainIndexerStatus> {
 
   const configured = Boolean(env.MONAD_RPC_URL && getContractAddresses().length);
   let rpcConnected = false;
+  let latestNetworkBlock: bigint | null = null;
   let message: string | null = null;
 
-  if (configured) {
+  if (!env.ONCHAIN_INDEXER_ENABLED) {
+    message = "On-chain indexer disabled.";
+  } else if (!configured) {
+    message = "Set MONAD_RPC_URL and PERPL_CONTRACT_ADDRESSES to enable indexing.";
+  } else {
     try {
       const client = createMonadClient();
-      await withTimeout(client.getBlockNumber(), 3000);
+      latestNetworkBlock = await withTimeout(client.getBlockNumber(), 3000);
       rpcConnected = true;
     } catch (error) {
       message = error instanceof Error ? error.message : "RPC connection failed";
     }
-  } else if (!env.ONCHAIN_INDEXER_ENABLED) {
-    message = "On-chain indexer disabled.";
-  } else {
-    message = "Set MONAD_RPC_URL and PERPL_CONTRACT_ADDRESSES to enable indexing.";
   }
+
+  const latestProcessedBlock = latestCursor?.lastProcessedBlock ?? null;
+  const blockLag =
+    latestNetworkBlock !== null && latestProcessedBlock !== null ? latestNetworkBlock - latestProcessedBlock : null;
+  const state = onchainState({
+    enabled: env.ONCHAIN_INDEXER_ENABLED,
+    configured,
+    rpcConnected,
+    latestProcessedBlock,
+    latestNetworkBlock,
+    blockLag
+  });
 
   return {
     enabled: env.ONCHAIN_INDEXER_ENABLED,
     configured,
+    state,
     rpcConnected,
-    latestProcessedBlock: latestCursor?.lastProcessedBlock.toString() ?? null,
+    latestProcessedBlock: latestProcessedBlock?.toString() ?? null,
+    latestNetworkBlock: latestNetworkBlock?.toString() ?? null,
+    blockLag: blockLag?.toString() ?? null,
     eventCount,
-    message
+    message: message ?? statusMessage(state)
   };
+}
+
+function onchainState({
+  enabled,
+  configured,
+  rpcConnected,
+  latestProcessedBlock,
+  latestNetworkBlock,
+  blockLag
+}: {
+  enabled: boolean;
+  configured: boolean;
+  rpcConnected: boolean;
+  latestProcessedBlock: bigint | null;
+  latestNetworkBlock: bigint | null;
+  blockLag: bigint | null;
+}): OnchainOperationalState {
+  if (!enabled) return "disabled";
+  if (!configured) return "not_configured";
+  if (!rpcConnected) return "offline";
+  if (!latestProcessedBlock || !latestNetworkBlock) return "syncing";
+  if (blockLag !== null && blockLag > 500n) return "syncing";
+  return "healthy";
+}
+
+function statusMessage(state: OnchainOperationalState) {
+  if (state === "disabled") return "On-chain indexer disabled.";
+  if (state === "not_configured") return "Set MONAD_RPC_URL and PERPL_CONTRACT_ADDRESSES to enable indexing.";
+  if (state === "offline") return "Configured RPC is not reachable.";
+  if (state === "syncing") return "On-chain indexer is syncing.";
+  return "On-chain indexer healthy.";
 }
 
 async function approximateOnchainEventCount() {

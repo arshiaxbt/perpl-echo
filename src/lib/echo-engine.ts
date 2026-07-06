@@ -12,6 +12,12 @@ export type EchoBreakdown = {
   explanationJson: string[];
 };
 
+export type EchoConfidence = {
+  confidenceScore: number | null;
+  confidenceLabel: "INSUFFICIENT_DATA" | "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH";
+  confidenceReasonsJson: string[];
+};
+
 export function scoreEcho({
   current,
   candidate,
@@ -81,16 +87,33 @@ export function buildEchoConfidence({
   sameRegimeCount,
   totalSampleSize,
   featureCompleteness,
-  hasOnchain
+  hasOnchain,
+  currentRegime
 }: {
   matches: Array<{ echoScore?: number; snapshot: MarketSnapshot }>;
   sameRegimeCount: number;
   totalSampleSize: number;
   featureCompleteness: number;
   hasOnchain: boolean;
-}) {
+  currentRegime?: string | null;
+}): EchoConfidence {
+  if (totalSampleSize < 100 || matches.length < 10) {
+    return {
+      confidenceScore: null,
+      confidenceLabel: "INSUFFICIENT_DATA",
+      confidenceReasonsJson: [
+        `Needs at least 100 historical snapshots; currently has ${totalSampleSize}.`,
+        `Needs at least 10 historical matches with forward outcomes; currently has ${matches.length}.`,
+        "Confidence is evidence quality only, not future price certainty."
+      ]
+    };
+  }
+
   const avgEcho = matches.length ? matches.reduce((sum, match) => sum + (match.echoScore ?? 0), 0) / matches.length : 0;
-  const regimeConsistency = matches.length ? matches.filter((match) => match.snapshot.regime === matches[0]?.snapshot.regime).length / matches.length : 0;
+  const regimeConsistency =
+    matches.length && currentRegime
+      ? matches.filter((match) => match.snapshot.regime === currentRegime).length / matches.length
+      : 0;
   const sampleScore = clamp(Math.log10(Math.max(1, totalSampleSize)) * 25, 0, 100);
   const sameRegimeScore = clamp((sameRegimeCount / Math.max(1, totalSampleSize)) * 180, 0, 100);
   const score = clamp(sampleScore * 0.25 + avgEcho * 0.25 + regimeConsistency * 100 * 0.18 + featureCompleteness * 100 * 0.2 + (hasOnchain ? 100 : 45) * 0.12 + sameRegimeScore * 0.1, 0, 100);

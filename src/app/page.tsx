@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
+import { DATA_QUALITY_THRESHOLDS, snapshotFreshnessStatus } from "@/lib/data-quality";
 
 export const dynamic = "force-dynamic";
 
@@ -24,17 +25,37 @@ export default async function HomePage() {
     },
     orderBy: { symbol: "asc" }
   });
+  const [snapshotCount, latestSnapshot, latestWorkerRun] = await Promise.all([
+    prisma.marketSnapshot.count(),
+    prisma.marketSnapshot.findFirst({ orderBy: { timestamp: "desc" }, select: { timestamp: true } }),
+    prisma.workerRun.findFirst({ where: { status: "success" }, orderBy: { startedAt: "desc" } })
+  ]);
+  const freshness = snapshotFreshnessStatus(latestSnapshot?.timestamp ?? null);
+  const oldestSnapshot = await prisma.marketSnapshot.findFirst({ orderBy: { timestamp: "asc" }, select: { timestamp: true } });
+  const historyHours =
+    oldestSnapshot && latestSnapshot
+      ? Math.max(0, (latestSnapshot.timestamp.getTime() - oldestSnapshot.timestamp.getTime()) / 3_600_000)
+      : 0;
+  const dataQualityLabel =
+    historyHours >= DATA_QUALITY_THRESHOLDS.rarityHistoryHours && snapshotCount >= DATA_QUALITY_THRESHOLDS.confidenceSnapshots
+      ? "Analysis ready"
+      : "Collecting history";
 
   const rows = await Promise.all(
     markets.map(async (market) => {
       const latest = market.snapshots[0] ?? null;
       const rateRows = await prisma.marketSnapshot.findMany({
         where: { marketId: market.id },
-        select: { fundingRate: true },
+        select: { fundingRate: true, timestamp: true },
         orderBy: { timestamp: "desc" },
         take: 5000
       });
-      const percentile = latest ? fundingPercentile(latest.fundingRate, rateRows.map((row) => row.fundingRate)) : null;
+      const oldest = rateRows[rateRows.length - 1]?.timestamp ?? null;
+      const marketHistoryHours = latest && oldest ? (latest.timestamp.getTime() - oldest.getTime()) / 3_600_000 : 0;
+      const percentile =
+        latest && marketHistoryHours >= DATA_QUALITY_THRESHOLDS.rarityHistoryHours
+          ? fundingPercentile(latest.fundingRate, rateRows.map((row) => row.fundingRate))
+          : null;
       return { market, latest, percentile };
     })
   );
@@ -93,6 +114,24 @@ export default async function HomePage() {
               <span className="text-right text-sm font-medium">
                 <LocalTime value={rows.find((row) => row.latest)?.latest?.timestamp} />
               </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-muted-foreground">Data quality</span>
+              <span className="text-right text-sm font-medium">{dataQualityLabel}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-muted-foreground">History collected</span>
+              <span className="text-right text-sm font-medium">{num(historyHours, 1)}h</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-muted-foreground">Latest snapshot age</span>
+              <span className="text-right text-sm font-medium">
+                {freshness.ageMinutes === null ? "No snapshots" : `${num(freshness.ageMinutes, 1)} min`}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-muted-foreground">Worker health</span>
+              <span className="text-right text-sm font-medium">{latestWorkerRun ? "running" : "not started"}</span>
             </div>
             <Button asChild variant="secondary" className="w-full">
               <Link href="/status">

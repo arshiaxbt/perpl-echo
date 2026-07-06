@@ -1,4 +1,11 @@
-import type { MarketSnapshot, OnchainIntelligenceSnapshot, Prisma } from "@prisma/client";
+import type {
+  Market,
+  MarketSnapshot,
+  MarketStateCluster,
+  MarketStateTransition,
+  OnchainIntelligenceSnapshot,
+  Prisma
+} from "@prisma/client";
 import { prisma } from "./prisma";
 import { jsonSafePublic } from "./json";
 import { fundingPercentile, rarityLabel, rarityScore } from "./metrics";
@@ -9,6 +16,7 @@ import { buildAnalysisHash } from "./analysis-hash";
 import { currentClusterForMarket, currentEvolutionForMarket } from "./cluster-service";
 import { crossMarketEcho } from "./cross-market";
 import { buildEchoConfidence, scoreEcho, type EchoBreakdown } from "./echo-engine";
+import { DATA_QUALITY_THRESHOLDS, buildDataQualityReport, type DataQualityReport } from "./data-quality";
 
 type FeatureName =
   | "fundingZ"
@@ -44,6 +52,8 @@ const baseWeights: Record<FeatureName, number> = {
 };
 
 const MIN_REGIME_SAMPLE_SIZE = 30;
+const ANALYSIS_CACHE_TTL_MS = 60_000;
+const analysisCache = new Map<string, { expiresAt: number; value: AnalyzeMarketStateResult }>();
 
 export type HistoricalMatch = {
   snapshot: MarketSnapshot;
@@ -63,11 +73,67 @@ export type FutureOutcome = {
   maxDownside: number | null;
 };
 
-export async function analyzeMarketState(symbol: string) {
-  return analyzeMarketStateAt(symbol);
+type MarketWithLatestSnapshot = Market & { snapshots: MarketSnapshot[] };
+type CurrentClusterResult = {
+  market: Market;
+  snapshot: MarketSnapshot & { cluster: MarketStateCluster | null };
+  cluster: MarketStateCluster | null;
+} | null;
+type EvolutionResult =
+  | (NonNullable<CurrentClusterResult> & { transitions: Array<MarketStateTransition & { toCluster: MarketStateCluster }> })
+  | null;
+type CrossMarketResult = Awaited<ReturnType<typeof crossMarketEcho>>;
+
+export type AnalyzeMarketStateResult = {
+  market: MarketWithLatestSnapshot;
+  current: MarketSnapshot;
+  analysisHash: string;
+  dataQuality: DataQualityReport;
+  regime: {
+    name: string;
+    confidence: number;
+    reasons: string[];
+    sampleSize: number;
+    warning: string | null;
+  };
+  marketMemory: MarketMemory;
+  currentCluster: CurrentClusterResult;
+  evolution: EvolutionResult;
+  crossMarket: CrossMarketResult;
+  echoConfidence: ReturnType<typeof buildEchoConfidence>;
+  fundingRegimeMetrics: ReturnType<typeof fundingRegimeMetrics>;
+  onchainIntelligence: OnchainIntelligenceSnapshot | null;
+  fundingPercentile: number | null;
+  rarityScore: number | null;
+  rarityLabel: string;
+  fundingRarityScore: number | null;
+  fundingRarityLabel: string;
+  sampleSize: number;
+  matches: Array<{
+    snapshot: MarketSnapshot;
+    similarity: number;
+    echoScore: number;
+    echoBreakdown: EchoBreakdown;
+    outcome: FutureOutcome;
+  }>;
+  averageOutcome: ReturnType<typeof averageOutcome>;
+};
+
+export async function analyzeMarketState(symbol: string, options: { persist?: boolean } = {}): Promise<AnalyzeMarketStateResult | null> {
+  return analyzeMarketStateAt(symbol, undefined, options);
 }
 
-export async function analyzeMarketStateAt(symbol: string, timestamp?: Date, options: { persist?: boolean } = {}) {
+export async function analyzeMarketStateAt(
+  symbol: string,
+  timestamp?: Date,
+  options: { persist?: boolean } = {}
+): Promise<AnalyzeMarketStateResult | null> {
+  const cacheKey = `${symbol.toUpperCase()}:${timestamp?.toISOString() ?? "latest"}:${options.persist === true ? "persist" : "read"}`;
+  const cached = analysisCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
   const market = await prisma.market.findUnique({
     where: { symbol: symbol.toUpperCase() },
     include: {
@@ -126,10 +192,30 @@ export async function analyzeMarketStateAt(symbol: string, timestamp?: Date, opt
     lastSimilarStateAt: nearest?.snapshot.timestamp ?? null
   });
 
-  matches = buildMatches(searchPool, current, currentVector, stats, onchainIntelligence, classifiedHistorical, percentile, memory.rarityScore);
+  const preliminaryDataQuality = buildDataQualityReport({
+    current,
+    historical: classifiedHistorical,
+    sameRegimeCount: sameRegime.length,
+    matchCount: matches.length,
+    onchainIntelligence: latestOnchainIntelligence,
+    onchainState: latestOnchainIntelligence ? "healthy" : "disabled"
+  });
+  const currentRarityForScoring = preliminaryDataQuality.analysisReadiness.hiddenMetrics.rarity ? null : memory.rarityScore;
+  matches = buildMatches(searchPool, current, currentVector, stats, onchainIntelligence, classifiedHistorical, percentile, currentRarityForScoring);
+  const dataQuality = buildDataQualityReport({
+    current,
+    historical: classifiedHistorical,
+    sameRegimeCount: sameRegime.length,
+    matchCount: matches.length,
+    onchainIntelligence: latestOnchainIntelligence,
+    onchainState: latestOnchainIntelligence ? "healthy" : "disabled"
+  });
   const currentCluster = await currentClusterForMarket(market.symbol);
   const evolution = await currentEvolutionForMarket(market.symbol);
-  const crossMarket = await crossMarketEcho(market.symbol, matches.map((match) => match.snapshot.timestamp));
+  const crossMarket =
+    matches.length >= DATA_QUALITY_THRESHOLDS.outcomeMatches
+      ? await crossMarketEcho(market.symbol, matches.map((match) => match.snapshot.timestamp))
+      : null;
   const analysisHash = buildAnalysisHash({ symbol: market.symbol, snapshot: current, clusterId: currentCluster?.cluster?.id ?? null });
   const featureCompleteness = computeFeatureCompleteness(current, latestOnchainIntelligence);
   const echoConfidence = buildEchoConfidence({
@@ -137,12 +223,17 @@ export async function analyzeMarketStateAt(symbol: string, timestamp?: Date, opt
     sameRegimeCount: sameRegime.length,
     totalSampleSize: searchPool.length,
     featureCompleteness,
-    hasOnchain: Boolean(latestOnchainIntelligence)
+    hasOnchain: Boolean(latestOnchainIntelligence),
+    currentRegime: regime.regime
   });
+  const visibleRarityScore = dataQuality.analysisReadiness.hiddenMetrics.rarity
+    ? null
+    : memory.rarityScore ?? rarityScore(percentile);
   const result = {
     market,
     current,
     analysisHash,
+    dataQuality,
     regime: {
       name: regime.regime,
       confidence: regime.confidence,
@@ -158,8 +249,9 @@ export async function analyzeMarketStateAt(symbol: string, timestamp?: Date, opt
     fundingRegimeMetrics: fundingRegimeMetrics(current, classifiedHistorical),
     onchainIntelligence: latestOnchainIntelligence,
     fundingPercentile: percentile,
-    rarityScore: memory.rarityScore ?? rarityScore(percentile),
-    rarityLabel: rarityLabelFromScore(memory.rarityScore) ?? rarityLabel(percentile),
+    rarityScore: visibleRarityScore,
+    rarityLabel:
+      visibleRarityScore === null ? "Collecting historical data" : rarityLabelFromScore(visibleRarityScore) ?? rarityLabel(percentile),
     fundingRarityScore: rarityScore(percentile),
     fundingRarityLabel: rarityLabel(percentile),
     sampleSize: searchPool.length,
@@ -167,7 +259,9 @@ export async function analyzeMarketStateAt(symbol: string, timestamp?: Date, opt
     averageOutcome: averageOutcome(matches.map((match) => match.outcome).filter(Boolean) as FutureOutcome[])
   };
 
-  if (options.persist !== false) {
+  analysisCache.set(cacheKey, { expiresAt: Date.now() + ANALYSIS_CACHE_TTL_MS, value: result });
+
+  if (options.persist === true && matches.length > 0) {
     await prisma.similaritySearch.create({
       data: {
         marketId: market.id,
@@ -258,7 +352,7 @@ function classifyHistoricalInMemory(snapshots: MarketSnapshot[]) {
 }
 
 export async function regimeForSymbol(symbol: string) {
-  const result = await analyzeMarketState(symbol);
+  const result = await analyzeMarketState(symbol, { persist: false });
   return result
     ? {
         market: result.market,
@@ -269,7 +363,7 @@ export async function regimeForSymbol(symbol: string) {
 }
 
 export async function memoryForSymbol(symbol: string) {
-  const result = await analyzeMarketState(symbol);
+  const result = await analyzeMarketState(symbol, { persist: false });
   return result
     ? {
         market: result.market,

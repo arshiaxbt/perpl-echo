@@ -9,7 +9,7 @@ type Params = {
 export async function GET(_request: Request, { params }: Params) {
   const { symbol } = await params;
 
-  const result = await analyzeMarketState(symbol);
+  const result = await analyzeMarketState(symbol, { persist: true });
   if (!result) {
     return NextResponse.json(
       {

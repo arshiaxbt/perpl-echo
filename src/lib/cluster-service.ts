@@ -122,7 +122,6 @@ export async function ensureAllClusters() {
 export async function currentClusterForMarket(symbol: string) {
   const market = await prisma.market.findUnique({ where: { symbol: symbol.toUpperCase() } });
   if (!market) return null;
-  await ensureClustersForMarket(market.id);
   const latest = await prisma.marketSnapshot.findFirst({
     where: { marketId: market.id },
     orderBy: { timestamp: "desc" },
@@ -134,7 +133,6 @@ export async function currentClusterForMarket(symbol: string) {
 export async function clustersForMarket(symbol: string) {
   const market = await prisma.market.findUnique({ where: { symbol: symbol.toUpperCase() } });
   if (!market) return null;
-  await ensureClustersForMarket(market.id);
   const clusters = await prisma.marketStateCluster.findMany({
     where: { marketId: market.id },
     orderBy: [{ sampleSize: "desc" }, { name: "asc" }]

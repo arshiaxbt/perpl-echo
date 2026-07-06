@@ -2,12 +2,14 @@ import type { MarketSnapshot } from "@prisma/client";
 import { clamp } from "./utils";
 
 export type MarketMemory = {
-  rarityScore: number;
+  rarityScore: number | null;
   nearestClusterName: string;
   lastSimilarStateAt: Date | null;
-  historicalFrequencyPercent: number;
+  historicalFrequencyPercent: number | null;
   sampleSize: number;
   stateAgeDays: number | null;
+  status: "ready" | "collecting";
+  reason: string | null;
 };
 
 export function buildMarketMemory({
@@ -24,6 +26,19 @@ export function buildMarketMemory({
   lastSimilarStateAt: Date | null;
 }): MarketMemory {
   const sampleSize = historical.length;
+  if (sampleSize < 100) {
+    return {
+      rarityScore: null,
+      nearestClusterName: "Collecting historical data",
+      lastSimilarStateAt: null,
+      historicalFrequencyPercent: null,
+      sampleSize,
+      stateAgeDays: null,
+      status: "collecting",
+      reason: "Market memory needs at least 100 snapshots before rarity and frequency are shown."
+    };
+  }
+
   const historicalFrequencyPercent = sampleSize ? (sameRegimeCount / sampleSize) * 100 : 0;
   const similarityPenalty = nearestSimilarity === null ? 18 : clamp((0.88 - nearestSimilarity) * 70, 0, 24);
   const baseRarity = 100 - historicalFrequencyPercent;
@@ -36,7 +51,9 @@ export function buildMarketMemory({
     lastSimilarStateAt,
     historicalFrequencyPercent,
     sampleSize,
-    stateAgeDays
+    stateAgeDays,
+    status: "ready",
+    reason: null
   };
 }
 
@@ -54,7 +71,8 @@ export function clusterName(snapshot: MarketSnapshot) {
   return "Market Memory";
 }
 
-export function rarityLabelFromScore(score: number) {
+export function rarityLabelFromScore(score: number | null) {
+  if (score === null) return null;
   if (score >= 90) return "Very Rare";
   if (score >= 75) return "Rare";
   if (score >= 55) return "Uncommon";

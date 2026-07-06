@@ -40,6 +40,8 @@ The Vercel web target does not run worker loops and does not depend on Docker or
 - Echo Engine scoring for historical state similarity
 - Market pages, timeline replay, state graph, bookmarks, votes, and status views
 - Health endpoints at `/api/health` and `/api/worker-status`
+- Data Quality Engine that hides rarity, confidence, regime statistics, and outcomes until the history is deep enough
+- Optional candle backfill for price, volume, volatility, and return history
 
 ## Local Development
 
@@ -76,6 +78,7 @@ curl http://localhost/api/worker-status
 - `npm run start`: Next.js production server
 - `npm run worker`: always-on worker loop
 - `npm run worker:once`: one full worker cycle, then exit
+- `npm run backfill`: candle-based historical backfill for price/volume/return context
 - `npm run db:migrate`: production-safe Prisma migration deploy
 - `npm run db:generate`: generate Prisma client
 - `npm run db:studio`: Prisma Studio
@@ -89,6 +92,33 @@ curl http://localhost/api/worker-status
 - `.env.worker.example`: Railway/Fly/Render/VPS worker target
 
 Do not use Docker-only hostnames such as `postgres` in Vercel or hosted workers. Use the external Postgres connection string from Supabase, Neon, Railway Postgres, or your VPS database.
+
+## Data Quality Rules
+
+Perpl Echo intentionally hides evidence metrics until there is enough data:
+
+- Rarity and market memory require at least 24 hours of history and 100 snapshots.
+- Echo confidence requires at least 100 historical snapshots and 10 matches with forward outcomes.
+- Same-regime statistics require at least 30 same-regime snapshots.
+- Average outcomes and top historical echoes require forward outcome windows to exist.
+
+When a metric is hidden, APIs and pages return the reason, usually `Collecting historical data` or `Insufficient sample size`.
+
+## Backfill Limits
+
+`npm run backfill` uses Perpl candle history where available. Candle backfill can improve price, volume, volatility, and future-return coverage. It does not reconstruct exact historical funding, open interest, orderbook imbalance, or on-chain context. Backfilled rows are marked internally so funding-based similarity does not treat reconstructed funding as exact history.
+
+Set `BACKFILL_ON_START=true` on the worker if you want a guarded startup backfill when the database has fewer than `BACKFILL_MIN_SNAPSHOTS` snapshots.
+
+## On-chain Status States
+
+The on-chain layer reports one of:
+
+- `disabled`: indexer intentionally disabled.
+- `not_configured`: RPC URL or contract addresses are missing.
+- `offline`: configured RPC is not reachable.
+- `syncing`: RPC works but no cursor exists yet or the cursor is behind.
+- `healthy`: RPC works and the cursor is near the current block.
 
 ## Deployment
 

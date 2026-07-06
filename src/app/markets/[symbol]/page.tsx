@@ -29,6 +29,7 @@ export default async function MarketPage({ params }: Params) {
   }
 
   const current = result.current;
+  const quality = result.dataQuality;
   const onchain = result.onchainIntelligence;
   const average = result.averageOutcome;
   const cluster = result.currentCluster?.cluster ?? null;
@@ -105,11 +106,12 @@ export default async function MarketPage({ params }: Params) {
             <Metric label="Funding" value={pct(current.fundingRate * 100, 4)} tone="warn" />
             <Metric label="APR" value={pct(current.fundingApr, 2)} tone="warn" />
             {result.fundingPercentile !== null ? <Metric label="Funding Percentile" value={pct(result.fundingPercentile, 1)} /> : null}
-            <Metric label="Volatility" value={pct(current.volatility, 2)} />
+            <Metric label="Volatility (24h ann.)" value={pct(current.volatility, 2)} />
             {result.rarityScore !== null ? <Metric label="State Rarity" value={`${num(result.rarityScore, 1)}/100`} /> : null}
-            {hasSpread ? <Metric label="Spread" value={pct(current.spread, 4)} /> : null}
-            {hasOpenInterest ? <Metric label="Open Interest" value={num(current.openInterest, 2)} /> : null}
+            {hasSpread ? <Metric label="Spread (%)" value={pct(current.spread, 4)} /> : null}
+            {hasOpenInterest ? <Metric label="Open Interest (contracts)" value={num(current.openInterest, 2)} /> : null}
             <Metric label="24h Return Before" value={pct(current.return24hBefore, 2)} />
+            <Metric label="History Collected" value={`${num(quality.historyCoverage.historyHours, 1)}h`} />
           </CardContent>
         </Card>
 
@@ -121,13 +123,22 @@ export default async function MarketPage({ params }: Params) {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <OutcomeChart data={chartData} />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Metric label="Sample Size" value={`${result.matches.length} top matches`} />
-              {hasFundingOutcome ? <Metric label="Funding Normalized Within 8h" value={pct(average.fundingNormalizedRate, 0)} /> : null}
-              <Metric label="Average Max Upside" value={pct(average.maxUpside, 2)} tone="good" />
-              <Metric label="Average Max Downside" value={pct(average.maxDownside, 2)} tone="bad" />
-            </div>
+            {quality.analysisReadiness.hiddenMetrics.averageOutcome ? (
+              <div className="rounded-sm border border-dashed p-6 text-sm text-muted-foreground">
+                {quality.analysisReadiness.reasons.find((reason) => reason.includes("historical matches")) ??
+                  "Collecting enough historical outcomes before average outcome is shown."}
+              </div>
+            ) : (
+              <>
+                <OutcomeChart data={chartData} />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Metric label="Sample Size" value={`${result.matches.length} top matches`} />
+                  {hasFundingOutcome ? <Metric label="Funding Normalized Within 8h" value={pct(average.fundingNormalizedRate, 0)} /> : null}
+                  <Metric label="Average Max Upside" value={pct(average.maxUpside, 2)} tone="good" />
+                  <Metric label="Average Max Downside" value={pct(average.maxDownside, 2)} tone="bad" />
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </section>
@@ -139,7 +150,10 @@ export default async function MarketPage({ params }: Params) {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Metric label="Evidence Confidence" value={`${num(result.echoConfidence.confidenceScore, 1)}/100`} />
+              <Metric
+                label="Evidence Confidence"
+                value={result.echoConfidence.confidenceScore === null ? "Insufficient evidence" : `${num(result.echoConfidence.confidenceScore, 1)}/100`}
+              />
               <Metric label="Label" value={result.echoConfidence.confidenceLabel.replaceAll("_", " ")} />
             </div>
             <div className="rounded-sm border border-border bg-muted/35 p-3 text-sm text-muted-foreground">
@@ -161,8 +175,15 @@ export default async function MarketPage({ params }: Params) {
             <div className="grid gap-3 sm:grid-cols-2">
               <Metric label="Regime" value={result.regime.name.replaceAll("_", " ")} />
               <Metric label="Confidence" value={pct(result.regime.confidence * 100, 0)} />
-              <Metric label="Same-Regime Sample" value={`${result.regime.sampleSize}`} />
+              {quality.analysisReadiness.hiddenMetrics.regimeStatistics ? null : (
+                <Metric label="Same-Regime Sample" value={`${result.regime.sampleSize}`} />
+              )}
             </div>
+            {quality.analysisReadiness.hiddenMetrics.regimeStatistics ? (
+              <div className="rounded-sm border border-dashed p-3 text-sm text-muted-foreground">
+                {quality.regimeCoverage.reason}
+              </div>
+            ) : null}
             {result.regime.warning ? (
               <div className="rounded-sm border border-accent/40 bg-accent/10 p-3 text-sm text-accent">{result.regime.warning}</div>
             ) : null}
@@ -183,16 +204,24 @@ export default async function MarketPage({ params }: Params) {
             <CardTitle>Market Memory</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2">
-            <Metric label="Rarity Score" value={`${num(result.marketMemory.rarityScore, 1)}/100`} />
-            <Metric label="Cluster Name" value={result.marketMemory.nearestClusterName} />
-            <Metric label="Historical Frequency" value={pct(result.marketMemory.historicalFrequencyPercent, 2)} />
-            <Metric label="Sample Size" value={`${result.marketMemory.sampleSize}`} />
-            {result.marketMemory.lastSimilarStateAt ? (
-              <Metric label="Last Seen" value={<LocalTime value={result.marketMemory.lastSimilarStateAt} />} />
-            ) : null}
-            {result.marketMemory.stateAgeDays !== null ? (
-              <Metric label="State Age" value={`${num(result.marketMemory.stateAgeDays, 1)} days`} />
-            ) : null}
+            {quality.analysisReadiness.hiddenMetrics.marketMemory ? (
+              <div className="rounded-sm border border-dashed p-6 text-sm text-muted-foreground sm:col-span-2">
+                {result.marketMemory.reason ?? "Collecting enough history before market memory is shown."}
+              </div>
+            ) : (
+              <>
+                <Metric label="Rarity Score" value={`${num(result.marketMemory.rarityScore, 1)}/100`} />
+                <Metric label="Cluster Name" value={result.marketMemory.nearestClusterName} />
+                <Metric label="Historical Frequency" value={pct(result.marketMemory.historicalFrequencyPercent, 2)} />
+                <Metric label="Sample Size" value={`${result.marketMemory.sampleSize}`} />
+                {result.marketMemory.lastSimilarStateAt ? (
+                  <Metric label="Last Seen" value={<LocalTime value={result.marketMemory.lastSimilarStateAt} />} />
+                ) : null}
+                {result.marketMemory.stateAgeDays !== null ? (
+                  <Metric label="State Age" value={`${num(result.marketMemory.stateAgeDays, 1)} days`} />
+                ) : null}
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -201,7 +230,7 @@ export default async function MarketPage({ params }: Params) {
             <CardTitle>Current Cluster</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {cluster ? (
+            {cluster && !quality.analysisReadiness.hiddenMetrics.clusterOutcomes ? (
               <>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Metric label="Cluster" value={cluster.name} />
@@ -215,7 +244,9 @@ export default async function MarketPage({ params }: Params) {
               </>
             ) : (
               <div className="rounded-sm border border-dashed p-6 text-sm text-muted-foreground">
-                Cluster assignment will appear after the worker processes this market history.
+                {cluster
+                  ? "Cluster assignment exists, but typical outcomes need more historical samples."
+                  : "Cluster assignment will appear after the worker processes this market history."}
               </div>
             )}
           </CardContent>

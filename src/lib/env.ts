@@ -20,13 +20,19 @@ const envSchema = z.object({
   PERPL_CONTRACT_ADDRESSES: z.string().default(""),
   ONCHAIN_INDEXER_ENABLED: z
     .enum(["true", "false"])
-    .default("true")
+    .default("false")
     .transform((value) => value === "true"),
   ONCHAIN_START_BLOCK: z
     .string()
     .default("")
     .transform((value) => (value ? BigInt(value) : null)),
-  ONCHAIN_POLL_INTERVAL_MS: z.coerce.number().positive().default(5000)
+  ONCHAIN_POLL_INTERVAL_MS: z.coerce.number().positive().default(5000),
+  BACKFILL_ON_START: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  BACKFILL_DAYS: z.coerce.number().positive().default(30),
+  BACKFILL_MIN_SNAPSHOTS: z.coerce.number().positive().default(100)
 }).transform((value) => ({
   ...value,
   PERPL_API_URL: value.PERPL_API_URL ?? `${value.PERPL_API_BASE_URL.replace(/\/$/, "")}/api`

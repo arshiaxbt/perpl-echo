@@ -41,10 +41,11 @@ export default async function StatusPage() {
           <CardTitle>On-chain Indexer</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric label="Enabled" value={onchain.enabled ? "enabled" : "disabled"} />
-          <Metric label="RPC Connection" value={onchain.rpcConnected ? "connected" : "not connected"} />
+          <Metric label="State" value={onchain.state.replaceAll("_", " ")} />
+          <Metric label="RPC Connection" value={onchain.rpcConnected ? "connected" : onchain.configured ? "offline" : "not configured"} />
           <Metric label="Latest Processed Block" value={onchain.latestProcessedBlock ?? "Not indexed"} />
-          <Metric label="Events Indexed" value={`${onchain.eventCount}`} />
+          <Metric label="Network Block" value={onchain.latestNetworkBlock ?? "Unavailable"} />
+          <Metric label="Events Indexed" value={`${Math.max(0, onchain.eventCount)}`} />
           <Metric label="Intelligence Snapshots" value={`${intelligenceCount}`} />
           <div className="rounded-sm border border-border bg-muted/35 p-3 sm:col-span-2 lg:col-span-4">
             <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Status Message</div>

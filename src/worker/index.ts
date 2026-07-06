@@ -5,6 +5,7 @@ import { ensureAllClusters } from "@/lib/cluster-service";
 import { classifyMissingRegimes } from "@/lib/regime";
 import { collectSnapshotsOnce } from "./collector";
 import { runOnchainIndexerOnce } from "./onchain-indexer";
+import { backfillHistoricalCandles } from "./backfill";
 
 type WorkerCycleStats = {
   collector?: Awaited<ReturnType<typeof collectSnapshotsOnce>> & { skipped?: boolean };
@@ -21,6 +22,7 @@ let shuttingDown = false;
 type WorkerCycleOptions = {
   runCollector: boolean;
   runDerived: boolean;
+  runOnchain: boolean;
 };
 
 function requireDatabaseUrl() {
@@ -74,12 +76,16 @@ async function runWorkerCycle(options: WorkerCycleOptions) {
       console.log(`[collector] skipped ${env.SNAPSHOT_COLLECTOR_ENABLED ? "not_due" : "disabled"}`);
     }
 
-    try {
-      stats.onchain = await runOnchainIndexerOnce();
-      console.log(`[onchain] latestBlock=${stats.onchain.latestBlock ?? "n/a"} saved=${stats.onchain.eventsSaved} skipped=${stats.onchain.skipped}`);
-    } catch (error) {
-      console.error("[onchain] fail", error);
-      throw error;
+    if (options.runOnchain) {
+      try {
+        stats.onchain = await runOnchainIndexerOnce();
+        console.log(`[onchain] latestBlock=${stats.onchain.latestBlock ?? "n/a"} saved=${stats.onchain.eventsSaved} skipped=${stats.onchain.skipped}`);
+      } catch (error) {
+        console.error("[onchain] fail", error);
+        throw error;
+      }
+    } else {
+      stats.onchain = { eventsSaved: 0, latestBlock: null, skipped: true };
     }
 
     if (options.runDerived) {
@@ -135,20 +141,45 @@ async function main() {
 
   console.log(`[worker] started mode=${once ? "once" : "loop"} collectorIntervalMs=${env.COLLECTOR_INTERVAL_MS} onchainPollIntervalMs=${env.ONCHAIN_POLL_INTERVAL_MS}`);
 
+  if (env.BACKFILL_ON_START) {
+    const snapshotCount = await prisma.marketSnapshot.count();
+    if (snapshotCount < env.BACKFILL_MIN_SNAPSHOTS) {
+      console.log(`[backfill] starting days=${env.BACKFILL_DAYS} currentSnapshots=${snapshotCount}`);
+      try {
+        await backfillHistoricalCandles(env.BACKFILL_DAYS);
+        console.log("[backfill] completed");
+      } catch (error) {
+        console.error("[backfill] failed; continuing worker startup", error);
+      }
+    } else {
+      console.log(`[backfill] skipped currentSnapshots=${snapshotCount} min=${env.BACKFILL_MIN_SNAPSHOTS}`);
+    }
+  }
+
   if (once) {
-    await runWorkerCycle({ runCollector: true, runDerived: true });
+    await runWorkerCycle({ runCollector: true, runDerived: true, runOnchain: env.ONCHAIN_INDEXER_ENABLED });
     return;
   }
 
   let lastCollectorRunAt = 0;
-  const loopIntervalMs = Math.min(env.COLLECTOR_INTERVAL_MS, env.ONCHAIN_POLL_INTERVAL_MS);
+  let lastOnchainRunAt = 0;
+  const onchainRunnable = env.ONCHAIN_INDEXER_ENABLED && Boolean(env.MONAD_RPC_URL && env.PERPL_CONTRACT_ADDRESSES);
+  const loopIntervalMs = onchainRunnable
+    ? Math.min(env.COLLECTOR_INTERVAL_MS, env.ONCHAIN_POLL_INTERVAL_MS)
+    : env.COLLECTOR_INTERVAL_MS;
 
   while (!shuttingDown) {
     try {
       const now = Date.now();
       const collectorDue = now - lastCollectorRunAt >= env.COLLECTOR_INTERVAL_MS;
-      await runWorkerCycle({ runCollector: collectorDue, runDerived: collectorDue });
+      const onchainDue = onchainRunnable && now - lastOnchainRunAt >= env.ONCHAIN_POLL_INTERVAL_MS;
+      if (!collectorDue && !onchainDue) {
+        await delay(loopIntervalMs);
+        continue;
+      }
+      await runWorkerCycle({ runCollector: collectorDue, runDerived: collectorDue, runOnchain: onchainDue });
       if (collectorDue) lastCollectorRunAt = now;
+      if (onchainDue) lastOnchainRunAt = now;
     } catch {
       // Error details are logged and persisted by runWorkerCycle. Keep the worker alive.
     }

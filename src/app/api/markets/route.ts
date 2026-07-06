@@ -52,11 +52,14 @@ export async function GET() {
       const latest = market.snapshots[0] ?? null;
       const rates = await prisma.marketSnapshot.findMany({
         where: { marketId: market.id },
-        select: { fundingRate: true },
+        select: { fundingRate: true, timestamp: true },
         orderBy: { timestamp: "desc" },
         take: 5000
       });
-      const percentile = latest ? fundingPercentile(latest.fundingRate, rates.map((row) => row.fundingRate)) : null;
+      const oldest = rates[rates.length - 1]?.timestamp ?? null;
+      const historyHours = latest && oldest ? (latest.timestamp.getTime() - oldest.getTime()) / 3_600_000 : 0;
+      const percentile =
+        latest && historyHours >= 24 ? fundingPercentile(latest.fundingRate, rates.map((row) => row.fundingRate)) : null;
       return {
         ...market,
         latest,

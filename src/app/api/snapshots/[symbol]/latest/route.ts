@@ -17,7 +17,31 @@ export async function GET(_request: Request, { params }: Params) {
 
   const latest = await prisma.marketSnapshot.findFirst({
     where: { marketId: market.id },
-    orderBy: { timestamp: "desc" }
+    orderBy: { timestamp: "desc" },
+    select: {
+      id: true,
+      marketId: true,
+      timestamp: true,
+      price: true,
+      indexPrice: true,
+      fundingRate: true,
+      fundingApr: true,
+      volume: true,
+      openInterest: true,
+      spread: true,
+      orderbookImbalance: true,
+      volatility: true,
+      return1hBefore: true,
+      return4hBefore: true,
+      return24hBefore: true,
+      volumeChange: true,
+      trendScore: true,
+      regime: true,
+      regimeConfidence: true,
+      regimeReasonsJson: true,
+      clusterId: true,
+      createdAt: true
+    }
   });
 
   if (!latest) {
