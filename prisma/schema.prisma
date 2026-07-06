@@ -1,0 +1,224 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Market {
+  id         Int              @id
+  symbol     String           @unique
+  baseAsset  String
+  quoteAsset String
+  active     Boolean          @default(true)
+  name       String?
+  priceDecimals Int           @default(0)
+  sizeDecimals  Int           @default(0)
+  rawJson    Json?
+  snapshots  MarketSnapshot[]
+  clusters   MarketStateCluster[]
+  onchainSnapshots OnchainMarketSnapshot[]
+  onchainIntelligenceSnapshots OnchainIntelligenceSnapshot[]
+  searches   SimilaritySearch[]
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+}
+
+model MarketSnapshot {
+  id                   String   @id @default(cuid())
+  marketId             Int
+  market               Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  timestamp            DateTime
+  price                Float
+  indexPrice           Float?
+  fundingRate          Float
+  fundingApr           Float
+  volume               Float
+  openInterest         Float?
+  spread               Float?
+  orderbookImbalance   Float?
+  volatility           Float
+  return1hBefore       Float
+  return4hBefore       Float
+  return24hBefore      Float
+  volumeChange         Float
+  trendScore           Float
+  regime               String?
+  regimeConfidence     Float?
+  regimeReasonsJson    Json?
+  clusterId            String?
+  cluster              MarketStateCluster? @relation(fields: [clusterId], references: [id], onDelete: SetNull)
+  rawJson              Json
+  createdAt            DateTime @default(now())
+
+  @@unique([marketId, timestamp])
+  @@index([marketId, timestamp])
+  @@index([clusterId])
+}
+
+model SimilaritySearch {
+  id                String   @id @default(cuid())
+  marketId          Int
+  market            Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now())
+  currentSnapshotId String?
+  resultsJson       Json
+
+  @@index([marketId, createdAt])
+}
+
+model CollectorRun {
+  id              String   @id @default(cuid())
+  startedAt       DateTime @default(now())
+  finishedAt      DateTime?
+  status          String
+  message         String?
+  snapshotsSaved  Int      @default(0)
+  marketsChecked  Int      @default(0)
+}
+
+model WorkerRun {
+  id          String   @id @default(cuid())
+  workerName  String
+  startedAt   DateTime @default(now())
+  finishedAt  DateTime?
+  status      String
+  message     String?
+  statsJson   Json?
+
+  @@index([workerName, startedAt])
+  @@index([status, startedAt])
+}
+
+model MarketStateCluster {
+  id                       String   @id @default(cuid())
+  marketId                 Int?
+  market                   Market?  @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  clusterKey               String   @unique
+  name                     String
+  description              String?
+  regime                   String
+  sampleSize               Int
+  averageDurationMinutes   Float?
+  averageReturn1h          Float?
+  averageReturn4h          Float?
+  averageReturn24h         Float?
+  fundingNormalizationRate Float?
+  transitionJson           Json?
+  centroidJson             Json
+  updatedAt                DateTime @updatedAt
+  snapshots                MarketSnapshot[]
+  outgoingTransitions      MarketStateTransition[] @relation("FromCluster")
+  incomingTransitions      MarketStateTransition[] @relation("ToCluster")
+
+  @@index([marketId, regime])
+}
+
+model MarketStateTransition {
+  id                            String             @id @default(cuid())
+  marketId                      Int?
+  fromClusterId                 String
+  fromCluster                   MarketStateCluster @relation("FromCluster", fields: [fromClusterId], references: [id], onDelete: Cascade)
+  toClusterId                   String
+  toCluster                     MarketStateCluster @relation("ToCluster", fields: [toClusterId], references: [id], onDelete: Cascade)
+  transitionCount               Int
+  probability                   Float
+  averageMinutesToTransition    Float?
+  averageReturnDuringTransition Float?
+  updatedAt                     DateTime           @updatedAt
+
+  @@unique([marketId, fromClusterId, toClusterId])
+  @@index([marketId, fromClusterId])
+}
+
+model EchoVote {
+  id            String   @id @default(cuid())
+  analysisHash  String
+  symbol        String
+  walletAddress String?
+  voteValue     Int
+  signature     String?
+  message       String?
+  createdAt     DateTime @default(now())
+
+  @@index([analysisHash])
+  @@index([symbol, createdAt])
+}
+
+model OnchainBlockCursor {
+  id                 String   @id @default(cuid())
+  chainId            Int
+  contractAddress    String
+  lastProcessedBlock BigInt
+  updatedAt          DateTime @updatedAt
+
+  @@unique([chainId, contractAddress])
+}
+
+model OnchainEvent {
+  id              String   @id @default(cuid())
+  chainId         Int
+  blockNumber     BigInt
+  blockHash       String
+  txHash          String
+  logIndex        Int
+  contractAddress String
+  eventName       String
+  marketSymbol    String?
+  trader          String?
+  rawJson         Json
+  createdAt       DateTime @default(now())
+
+  @@unique([chainId, txHash, logIndex])
+  @@index([chainId, blockNumber])
+  @@index([marketSymbol, blockNumber])
+}
+
+model OnchainMarketSnapshot {
+  id                 String   @id @default(cuid())
+  marketId           Int
+  market             Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  timestamp          DateTime
+  blockNumber        BigInt
+  txCount            Int
+  tradeCount         Int?
+  liquidationCount   Int?
+  largeTradeCount    Int?
+  activeWalletCount  Int?
+  whaleFlowScore     Float?
+  rawJson            Json
+  createdAt          DateTime @default(now())
+
+  @@unique([marketId, blockNumber])
+  @@index([marketId, timestamp])
+}
+
+model OnchainIntelligenceSnapshot {
+  id                        String   @id @default(cuid())
+  marketId                  Int?
+  market                    Market?  @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  timestamp                 DateTime
+  blockNumber               BigInt
+  windowMinutes             Int
+  recentEventCount          Int
+  uniqueWalletCount         Int?
+  newWalletCount            Int?
+  returningWalletCount      Int?
+  activeWalletDelta         Int?
+  estimatedLargeTradeCount  Int?
+  whaleActivityScore        Float?
+  walletConcentrationScore  Float?
+  largestWalletDominance    Float?
+  eventVelocity             Float?
+  liquidationEventCount     Int?
+  positionChangeEventCount  Int?
+  unknownEventCount         Int?
+  rawJson                   Json
+  createdAt                 DateTime @default(now())
+
+  @@unique([marketId, blockNumber, windowMinutes])
+  @@index([marketId, timestamp])
+  @@index([windowMinutes, timestamp])
+}
