@@ -2,7 +2,6 @@ import { prisma } from "@/lib/prisma";
 import { deriveSnapshot, marketAssetsFromPerpl } from "@/lib/metrics";
 import { effectiveMarketSymbol, PerplApiClient } from "@/lib/perpl";
 import { ensureSnapshotRegime } from "@/lib/regime";
-import { ensureClustersForMarket } from "@/lib/cluster-service";
 
 export async function collectSnapshotsOnce() {
   const run = await prisma.collectorRun.create({
@@ -70,7 +69,6 @@ export async function collectSnapshotsOnce() {
         }
       });
       await ensureSnapshotRegime(savedSnapshot);
-      await ensureClustersForMarket(market.id);
       snapshotsSaved += 1;
     }
 

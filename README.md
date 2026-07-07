@@ -4,7 +4,7 @@ Perpl Echo collects public Perpl market snapshots and asks:
 
 > Have we seen a market state like this before, and what happened afterward?
 
-It is a Next.js and Prisma app with a separate always-on worker. The web app reads from Postgres and serves the UI/API routes. The worker fills Postgres by collecting Perpl public market data, indexing optional Monad logs, generating on-chain intelligence snapshots, assigning clusters, and updating market transition probabilities.
+It is a Next.js and Prisma app with a scheduled one-shot worker. The web app reads from Postgres and serves the UI/API routes. GitHub Actions runs `npm run worker:once` on a schedule to collect Perpl public market data, generate derived metrics, assign clusters, and update market transition probabilities.
 
 This project uses public market data and optional public RPC data only. It does not use private keys, trading endpoints, paid APIs, AI APIs, custody, approvals, or token transfers.
 
@@ -16,10 +16,9 @@ Browser
      -> API routes
      -> external Postgres
 
-Railway/Fly/Render/VPS worker
+GitHub Actions scheduled worker
   -> Perpl public API
-  -> Monad public RPC
-  -> external Postgres
+  -> Supabase Postgres
 
 Local Docker Compose
   -> postgres service
@@ -28,7 +27,7 @@ Local Docker Compose
   -> nginx service
 ```
 
-The Vercel web target does not run worker loops and does not depend on Docker or Docker network hostnames. The worker target runs separately as a long-lived Node process. The production database target is Supabase PostgreSQL.
+The Vercel web target does not run worker loops and does not depend on Docker or Docker network hostnames. The production worker is a GitHub Actions scheduled `worker:once` run. The production database target is Supabase PostgreSQL.
 
 ## Features
 
@@ -89,20 +88,20 @@ curl http://localhost/api/worker-status
 
 - `.env.example`: local full-stack Docker development
 - `.env.vercel.example`: Vercel web target
-- `.env.worker.example`: Railway/Fly/Render/VPS worker target
+- `.env.worker.example`: GitHub Actions worker secrets reference
 - `.env.supabase.example`: Supabase-backed Vercel web target
 
-Do not use Docker-only hostnames such as `postgres` in Vercel or hosted workers. Use Supabase's pooled connection string for `DATABASE_URL` when available and the direct connection string for `DIRECT_URL`.
+Do not use Docker-only hostnames such as `postgres` in Vercel or GitHub Actions. Use Supabase's transaction pooler for `DATABASE_URL` and session pooler for `DIRECT_URL`.
 
-## Railway Worker
+## GitHub Actions Worker
 
-`railway.json` pins the Railway start command to:
+Production collection runs from `.github/workflows/worker.yml`:
 
 ```bash
-npm run worker
+npm run worker:once
 ```
 
-Railway should run only the worker target. It should not run `npm run start` or serve the Next.js web app. Set `WORKER_NAME=perpl-echo-railway-worker` on Railway so `/api/worker-status` can distinguish Railway runs from any old VPS runs.
+The workflow is scheduled every 5 minutes when GitHub allows it and also supports manual `workflow_dispatch`. It must use `WORKER_NAME=perpl-echo-github-actions`. Local `npm run worker` remains available for development only.
 
 ## Data Quality Rules
 
@@ -150,7 +149,7 @@ Recommended production split:
 ```text
 GitHub repo
   -> Vercel web app
-  -> Railway worker
+  -> GitHub Actions worker
   -> Supabase Postgres
 ```
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { snapshotFreshnessStatus } from "@/lib/data-quality";
 import { getOnchainStatus } from "@/lib/onchain";
+import { runnerTypeFromWorkerName, withRunnerType } from "@/lib/worker-status";
 
 export async function GET() {
   let databaseConnected = false;
@@ -52,8 +53,9 @@ export async function GET() {
         snapshotFreshness: freshness,
         latestOnchainProcessedBlock,
         onchain,
-        lastSuccessfulWorkerRun,
+        lastSuccessfulWorkerRun: withRunnerType(lastSuccessfulWorkerRun),
         lastSuccessfulCollectorRun,
+        runnerType: runnerTypeFromWorkerName(lastSuccessfulWorkerRun?.workerName),
         workerFreshness: {
           ageMinutes: workerAgeMinutes,
           stale: workerAgeMinutes === null || workerAgeMinutes > 15

@@ -3,6 +3,7 @@ import { snapshotFreshnessStatus } from "@/lib/data-quality";
 import { jsonSafePublic } from "@/lib/json";
 import { getOnchainStatus } from "@/lib/onchain";
 import { prisma } from "@/lib/prisma";
+import { runnerTypeFromWorkerName, withRunnerType } from "@/lib/worker-status";
 
 export async function GET() {
   const [
@@ -46,8 +47,9 @@ export async function GET() {
 
   return NextResponse.json(
     jsonSafePublic({
-      latestWorkerRun,
-      lastSuccessfulWorkerRun,
+      latestWorkerRun: withRunnerType(latestWorkerRun),
+      lastSuccessfulWorkerRun: withRunnerType(lastSuccessfulWorkerRun),
+      runnerType: runnerTypeFromWorkerName(lastSuccessfulWorkerRun?.workerName),
       latestCollectorRun,
       lastSuccessfulCollectorRun,
       latestIndexerBlock: latestIndexerCursor?.lastProcessedBlock ?? stats?.onchain?.latestBlock ?? null,

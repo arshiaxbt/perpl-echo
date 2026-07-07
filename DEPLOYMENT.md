@@ -1,68 +1,58 @@
-# Perpl Echo Deployment Guide
+# Perpl Echo Free Deployment Guide
 
-This guide deploys Perpl Echo with three separate production targets:
+Production uses only free-friendly infrastructure:
 
-- Web: Vercel Next.js app and API routes
-- Worker: Railway long-running Node process
-- Database: Supabase PostgreSQL
+- Web: Vercel Free
+- Database: Supabase Free PostgreSQL
+- Worker: GitHub Actions scheduled `npm run worker:once`
 
-Do not deploy the worker inside Vercel. Vercel builds and serves the web app only. Do not use Docker-only hostnames such as `postgres` outside local Docker Compose.
+Do not use Neon, Railway, a VPS worker, Vercel Cron, or any always-on paid compute for production.
 
-## Production Commands
+## Architecture
 
-Use these commands for Supabase Postgres:
+```text
+GitHub Actions schedule
+  -> npm run worker:once
+  -> Perpl public API
+  -> Supabase Postgres
+
+Vercel Free
+  -> Next.js web app and API routes
+  -> Supabase Postgres
+```
+
+The worker exits after one cycle. It does not sleep forever and does not serve the web app.
+
+## Supabase Env Vars
+
+Use Supabase pooler URLs:
 
 ```bash
-npm install
+DATABASE_URL=<transaction-pooler-url>?pgbouncer=true&connection_limit=1
+DIRECT_URL=<session-pooler-url>
+```
+
+For this project shape, `DATABASE_URL` is the pooler URL on port `6543`; `DIRECT_URL` is the session pooler URL on port `5432`.
+
+## Run Migrations
+
+```bash
+DATABASE_URL="<transaction-pooler-url>?pgbouncer=true&connection_limit=1" \
+DIRECT_URL="<session-pooler-url>" \
 npm run db:generate
+
+DATABASE_URL="<transaction-pooler-url>?pgbouncer=true&connection_limit=1" \
+DIRECT_URL="<session-pooler-url>" \
 npm run db:migrate
 ```
 
-`npm run db:migrate` runs `prisma migrate deploy`. Do not use `prisma migrate dev` in production.
+## Vercel Env Vars
 
-## Supabase Connection Strings
-
-Use Supabase's pooled connection string for app traffic when available:
+Set these in Vercel:
 
 ```bash
-DATABASE_URL=<supabase-pooled-connection-string>
-```
-
-Use Supabase's direct connection string for Prisma migrations:
-
-```bash
-DIRECT_URL=<supabase-direct-connection-string>
-```
-
-Keep both secret. Do not commit `.env` files.
-
-## Neon Migration Paths
-
-### Path A: Neon Accessible
-
-If Neon becomes accessible again, export data from Neon and import it into Supabase before switching Vercel/Railway.
-
-Use `pg_dump`/`pg_restore` or provider tools. Verify counts after import:
-
-```sql
-SELECT COUNT(*) FROM "Market";
-SELECT COUNT(*) FROM "MarketSnapshot";
-SELECT COUNT(*) FROM "WorkerRun";
-```
-
-### Path B: Neon Inaccessible
-
-If Neon is blocked by the monthly network transfer limit, start fresh on Supabase.
-
-Run Prisma migrations on Supabase, then let the Railway worker collect current market data and run a guarded candle backfill. Do not fake historical migration. Document that historical Neon rows were not migrated because Neon transfer quota was exceeded.
-
-## Vercel Web Env Vars
-
-Set these in Vercel Project Settings -> Environment Variables:
-
-```bash
-DATABASE_URL=<supabase-pooled-connection-string>
-DIRECT_URL=<supabase-direct-connection-string>
+DATABASE_URL=<transaction-pooler-url>?pgbouncer=true&connection_limit=1
+DIRECT_URL=<session-pooler-url>
 NEXT_PUBLIC_APP_URL=https://perpl-echo.vercel.app
 NEXT_PUBLIC_ENABLE_WALLET_FEATURES=false
 NEXT_PUBLIC_MONAD_CHAIN_ID=143
@@ -72,62 +62,57 @@ ONCHAIN_INDEXER_ENABLED=false
 
 Redeploy Vercel after changing env vars.
 
-## Railway Worker
+## GitHub Actions Secrets
 
-The repository includes `railway.json`, which sets Railway's start command to:
-
-```bash
-npm run worker
-```
-
-Railway should run only the worker target. It should not run `npm run start` or serve the Next.js web app.
-
-Set these on the Railway worker service:
+Add these repository secrets in GitHub -> Settings -> Secrets and variables -> Actions:
 
 ```bash
-DATABASE_URL=<supabase-pooled-connection-string>
-DIRECT_URL=<supabase-direct-connection-string>
-WORKER_NAME=perpl-echo-railway-worker
+DATABASE_URL=<transaction-pooler-url>?pgbouncer=true&connection_limit=1
+DIRECT_URL=<session-pooler-url>
 PERPL_API_BASE_URL=https://app.perpl.xyz
 MONAD_RPC_URL=https://rpc.monad.xyz
 PERPL_CHAIN_ID=143
 PERPL_CONTRACT_ADDRESSES=0x34b6552d57a35a1d042ccae1951bd1c370112a6f
-ONCHAIN_INDEXER_ENABLED=false
 SNAPSHOT_COLLECTOR_ENABLED=true
+ONCHAIN_INDEXER_ENABLED=false
 WORKER_ENABLED=true
-COLLECTOR_INTERVAL_MS=300000
-ONCHAIN_POLL_INTERVAL_MS=5000
-BACKFILL_ON_START=true
-BACKFILL_FORCE=false
+BACKFILL_ON_START=false
 BACKFILL_DAYS=7
 BACKFILL_MIN_SNAPSHOTS=100
-RETENTION_ENABLED=true
-RAW_SNAPSHOT_RETENTION_DAYS=30
-RAW_ONCHAIN_EVENT_RETENTION_DAYS=7
 ```
 
-Keep on-chain disabled initially. Enable it later only after snapshot collection is stable.
+The workflow is `.github/workflows/worker.yml`. It runs every 5 minutes when GitHub scheduling allows it and can also be run manually with `workflow_dispatch`.
 
-## Verification
+## Free-Tier Protection
 
-After Supabase, Vercel, and Railway are configured:
+- `worker:once` exits after one cycle.
+- Backfill is disabled for scheduled runs by default.
+- On-chain indexing is disabled by default.
+- Duplicate snapshots are prevented by a `(marketId, timestamp)` unique constraint.
+- Public APIs strip `rawJson`.
+- Timeline ranges are limited to `1h`, `4h`, `24h`, or `7d`.
+- 5-minute snapshots are retained for 30 days.
+- Older snapshots are aggregated into hourly summaries in `MarketHourlySnapshot`.
+- Raw on-chain logs are retained for 7 days only when on-chain indexing is enabled.
+- Worker health warns when no successful run occurred in 15 minutes.
+- Snapshot health warns when the latest snapshot is older than 10 minutes.
 
-```bash
-curl https://perpl-echo.vercel.app/api/health
-curl https://perpl-echo.vercel.app/api/worker-status
-curl https://perpl-echo.vercel.app/api/markets
-```
+## Migration Checklist
 
-Expected:
+1. Create Supabase project.
+2. Get pooled `DATABASE_URL` and session `DIRECT_URL`.
+3. Run Prisma migrations.
+4. Add Vercel Supabase env vars.
+5. Redeploy Vercel.
+6. Add GitHub Actions secrets.
+7. Manually run the worker workflow.
+8. Verify `/api/health` shows a fresh snapshot.
+9. Verify `/api/worker-status` shows `runnerType: github-actions`.
+10. Stop and disable the VPS worker only after GitHub Actions has written fresh snapshots.
 
-- `/api/health` returns `ok: true` once snapshots are fresh.
-- `/api/worker-status` shows `WORKER_NAME=perpl-echo-railway-worker` in recent successful runs.
-- `MarketSnapshot` count increases every 5 minutes.
-- `/markets` and market detail pages are dynamic and read fresh Supabase state.
+## Stop VPS Worker After GitHub Actions Works
 
-## Disable VPS Worker After Railway Works
-
-Only after Railway is writing fresh Supabase snapshots:
+Do not delete files. Only stop the service after verification:
 
 ```bash
 systemctl list-units | grep -i perpl
@@ -136,50 +121,8 @@ sudo systemctl disable perpl-echo-worker
 sudo systemctl status perpl-echo-worker
 ```
 
-Do not delete VPS files.
+Then wait for the next GitHub Actions run and confirm snapshot count increases.
 
-After stopping the VPS worker, wait for one Railway cycle and verify snapshot count increases again.
+## Neon
 
-## Free-Tier Protection
-
-Perpl Echo includes retention and usage controls:
-
-- Keeps 5-minute snapshots for 30 days.
-- Aggregates older snapshots into hourly summaries in `MarketHourlySnapshot`.
-- Keeps hourly summaries indefinitely.
-- Keeps raw on-chain logs for only 7 days when on-chain indexing is enabled.
-- On-chain indexing is disabled by default.
-- Startup backfill records a successful backfill and does not repeat unless `BACKFILL_FORCE=true`.
-- Timeline ranges are limited to `1h`, `4h`, `24h`, or `7d`.
-- Public JSON responses strip `rawJson`.
-- Health warns when latest snapshot is older than 10 minutes or no worker succeeded in 15 minutes.
-
-## Common Errors
-
-`DATABASE_URL is required for the worker target.`
-
-Set `DATABASE_URL` on Railway.
-
-`Can't reach database server`
-
-Use the Supabase connection string, not Neon and not a Docker hostname. Check whether your pooled and direct URLs are assigned to the right env vars.
-
-`relation "Market" does not exist`
-
-Run migrations against Supabase:
-
-```bash
-DATABASE_URL="<pooled>" DIRECT_URL="<direct>" npm run db:migrate
-```
-
-Vercel pages return 500
-
-Check Vercel `DATABASE_URL` and `DIRECT_URL`, then redeploy.
-
-Railway runs the web server
-
-Confirm Railway start command is `npm run worker` and `railway.json` is present.
-
-No historical matches appear
-
-This is expected until enough forward outcome windows exist. The 7-day candle backfill improves price/volume/return coverage but does not reconstruct exact historical funding or on-chain context.
+Neon is no longer used in production. If old Neon data is inaccessible due transfer limits, start fresh on Supabase and document that historical Neon data was not migrated.
