@@ -50,7 +50,7 @@ async function runWorkerCycle(options: WorkerCycleOptions) {
   const started = Date.now();
   const run = await prisma.workerRun.create({
     data: {
-      workerName: "perpl-echo-worker",
+      workerName: env.WORKER_NAME,
       status: "running"
     }
   });
@@ -173,18 +173,23 @@ async function main() {
       const now = Date.now();
       const collectorDue = now - lastCollectorRunAt >= env.COLLECTOR_INTERVAL_MS;
       const onchainDue = onchainRunnable && now - lastOnchainRunAt >= env.ONCHAIN_POLL_INTERVAL_MS;
+      if (collectorDue) lastCollectorRunAt = now;
+      if (onchainDue) lastOnchainRunAt = now;
       if (!collectorDue && !onchainDue) {
-        await delay(loopIntervalMs);
+        const nextCollectorIn = env.COLLECTOR_INTERVAL_MS - (now - lastCollectorRunAt);
+        const nextOnchainIn = onchainRunnable ? env.ONCHAIN_POLL_INTERVAL_MS - (now - lastOnchainRunAt) : loopIntervalMs;
+        await delay(Math.max(1000, Math.min(loopIntervalMs, nextCollectorIn, nextOnchainIn)));
         continue;
       }
       await runWorkerCycle({ runCollector: collectorDue, runDerived: collectorDue, runOnchain: onchainDue });
-      if (collectorDue) lastCollectorRunAt = now;
-      if (onchainDue) lastOnchainRunAt = now;
     } catch {
       // Error details are logged and persisted by runWorkerCycle. Keep the worker alive.
     }
     if (!shuttingDown) {
-      await delay(loopIntervalMs);
+      const afterCycle = Date.now();
+      const nextCollectorIn = env.COLLECTOR_INTERVAL_MS - (afterCycle - lastCollectorRunAt);
+      const nextOnchainIn = onchainRunnable ? env.ONCHAIN_POLL_INTERVAL_MS - (afterCycle - lastOnchainRunAt) : loopIntervalMs;
+      await delay(Math.max(1000, Math.min(loopIntervalMs, nextCollectorIn, nextOnchainIn)));
     }
   }
 }

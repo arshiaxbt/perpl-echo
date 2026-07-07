@@ -111,6 +111,7 @@ Set these on the Railway worker service:
 
 ```bash
 DATABASE_URL=<hosted-postgres-url>
+WORKER_NAME=perpl-echo-railway-worker
 PERPL_API_BASE_URL=https://app.perpl.xyz
 MONAD_RPC_URL=https://rpc.monad.xyz
 PERPL_CHAIN_ID=143
@@ -125,6 +126,8 @@ BACKFILL_ON_START=false
 BACKFILL_DAYS=30
 BACKFILL_MIN_SNAPSHOTS=100
 ```
+
+The repository includes `railway.json`, which sets Railway's start command to `npm run worker`. Do not set the Railway start command to `npm run start`; Vercel serves the web app.
 
 ### 10. Start Worker
 
@@ -274,6 +277,7 @@ Create a `.env` file on the VPS:
 
 ```bash
 DATABASE_URL=<hosted-postgres-url>
+WORKER_NAME=perpl-echo-vps-worker
 PERPL_API_BASE_URL=https://app.perpl.xyz
 MONAD_RPC_URL=https://rpc.monad.xyz
 PERPL_CHAIN_ID=143

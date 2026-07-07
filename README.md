@@ -93,6 +93,16 @@ curl http://localhost/api/worker-status
 
 Do not use Docker-only hostnames such as `postgres` in Vercel or hosted workers. Use the external Postgres connection string from Supabase, Neon, Railway Postgres, or your VPS database.
 
+## Railway Worker
+
+`railway.json` pins the Railway start command to:
+
+```bash
+npm run worker
+```
+
+Railway should run only the worker target. It should not run `npm run start` or serve the Next.js web app. Set `WORKER_NAME=perpl-echo-railway-worker` on Railway so `/api/worker-status` can distinguish Railway runs from any old VPS runs.
+
 ## Data Quality Rules
 
 Perpl Echo intentionally hides evidence metrics until there is enough data:

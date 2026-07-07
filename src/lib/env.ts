@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const envSchema = z.object({
   DATABASE_URL: z.string().optional(),
+  WORKER_NAME: z.string().default("perpl-echo-worker"),
   PERPL_API_BASE_URL: z.string().url().default("https://app.perpl.xyz"),
   PERPL_API_URL: z.string().url().optional(),
   PERPL_WS_URL: z.string().url().default("wss://app.perpl.xyz"),
