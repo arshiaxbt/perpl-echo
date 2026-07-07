@@ -111,7 +111,7 @@ async function approximateOnchainEventCount() {
     WHERE oid = '"OnchainEvent"'::regclass
   `;
   const estimate = rows[0]?.estimate ?? 0;
-  return Number(estimate);
+  return Math.max(0, Number(estimate));
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number) {

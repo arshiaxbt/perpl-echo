@@ -98,14 +98,16 @@ export function buildEchoConfidence({
   currentRegime?: string | null;
 }): EchoConfidence {
   if (totalSampleSize < 100 || matches.length < 10) {
+    const confidenceReasonsJson = [
+      totalSampleSize < 100 ? `Needs at least 100 historical snapshots; currently has ${totalSampleSize}.` : null,
+      matches.length < 10 ? `Needs at least 10 historical matches with forward outcomes; currently has ${matches.length}.` : null,
+      "Confidence is evidence quality only, not future price certainty."
+    ].filter((reason): reason is string => Boolean(reason));
+
     return {
       confidenceScore: null,
       confidenceLabel: "INSUFFICIENT_DATA",
-      confidenceReasonsJson: [
-        `Needs at least 100 historical snapshots; currently has ${totalSampleSize}.`,
-        `Needs at least 10 historical matches with forward outcomes; currently has ${matches.length}.`,
-        "Confidence is evidence quality only, not future price certainty."
-      ]
+      confidenceReasonsJson
     };
   }
 
