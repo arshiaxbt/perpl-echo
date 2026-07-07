@@ -32,8 +32,18 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
+  BACKFILL_FORCE: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
   BACKFILL_DAYS: z.coerce.number().positive().default(30),
-  BACKFILL_MIN_SNAPSHOTS: z.coerce.number().positive().default(100)
+  BACKFILL_MIN_SNAPSHOTS: z.coerce.number().positive().default(100),
+  RETENTION_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  RAW_SNAPSHOT_RETENTION_DAYS: z.coerce.number().positive().default(30),
+  RAW_ONCHAIN_EVENT_RETENTION_DAYS: z.coerce.number().positive().default(7)
 }).transform((value) => ({
   ...value,
   PERPL_API_URL: value.PERPL_API_URL ?? `${value.PERPL_API_BASE_URL.replace(/\/$/, "")}/api`

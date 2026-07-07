@@ -3,6 +3,7 @@ import { jsonSafe } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import { ensureAllClusters } from "@/lib/cluster-service";
 import { classifyMissingRegimes } from "@/lib/regime";
+import { hasSuccessfulBackfillRun, recordBackfillRun, runRetentionMaintenance } from "@/lib/retention";
 import { collectSnapshotsOnce } from "./collector";
 import { runOnchainIndexerOnce } from "./onchain-indexer";
 import { backfillHistoricalCandles } from "./backfill";
@@ -13,6 +14,7 @@ type WorkerCycleStats = {
   regimesClassified: number;
   clustersUpdated: number;
   transitionsUpdated: number;
+  retention?: Awaited<ReturnType<typeof runRetentionMaintenance>>;
   durationMs: number;
 };
 
@@ -39,10 +41,17 @@ async function runDerivedJobs() {
   }
 
   const clusters = await ensureAllClusters();
+  const retention = env.RETENTION_ENABLED
+    ? await runRetentionMaintenance({
+        rawSnapshotDays: env.RAW_SNAPSHOT_RETENTION_DAYS,
+        rawOnchainEventDays: env.RAW_ONCHAIN_EVENT_RETENTION_DAYS
+      })
+    : undefined;
   return {
     regimesClassified,
     clustersUpdated: clusters.clusters,
-    transitionsUpdated: clusters.transitions
+    transitionsUpdated: clusters.transitions,
+    retention
   };
 }
 
@@ -93,10 +102,18 @@ async function runWorkerCycle(options: WorkerCycleOptions) {
       stats.regimesClassified = derived.regimesClassified;
       stats.clustersUpdated = derived.clustersUpdated;
       stats.transitionsUpdated = derived.transitionsUpdated;
+      stats.retention = derived.retention;
     }
     stats.durationMs = Date.now() - started;
 
-    console.log(`[derived] snapshotsClassified=${stats.regimesClassified} clusters=${stats.clustersUpdated} transitions=${stats.transitionsUpdated}`);
+    console.log(
+      `[derived] snapshotsClassified=${stats.regimesClassified} clusters=${stats.clustersUpdated} transitions=${stats.transitionsUpdated}`
+    );
+    if (stats.retention) {
+      console.log(
+        `[retention] aggregatedHours=${stats.retention.aggregatedHours} deletedSnapshots=${stats.retention.deletedSnapshots} deletedOnchainEvents=${stats.retention.deletedOnchainEvents}`
+      );
+    }
     console.log(`[worker] cycle durationMs=${stats.durationMs}`);
 
     await prisma.workerRun.update({
@@ -143,12 +160,28 @@ async function main() {
 
   if (env.BACKFILL_ON_START) {
     const snapshotCount = await prisma.marketSnapshot.count();
-    if (snapshotCount < env.BACKFILL_MIN_SNAPSHOTS) {
+    const alreadyBackfilled = await hasSuccessfulBackfillRun();
+    if (!env.BACKFILL_FORCE && alreadyBackfilled) {
+      console.log("[backfill] skipped previous successful backfill exists");
+    } else if (snapshotCount < env.BACKFILL_MIN_SNAPSHOTS || env.BACKFILL_FORCE) {
       console.log(`[backfill] starting days=${env.BACKFILL_DAYS} currentSnapshots=${snapshotCount}`);
+      const startedAt = new Date();
       try {
         await backfillHistoricalCandles(env.BACKFILL_DAYS);
+        await recordBackfillRun({
+          status: "success",
+          startedAt,
+          message: "startup candle backfill completed",
+          statsJson: jsonSafe({ days: env.BACKFILL_DAYS, snapshotCountBefore: snapshotCount })
+        });
         console.log("[backfill] completed");
       } catch (error) {
+        await recordBackfillRun({
+          status: "failed",
+          startedAt,
+          message: error instanceof Error ? error.message : "startup candle backfill failed",
+          statsJson: jsonSafe({ days: env.BACKFILL_DAYS, snapshotCountBefore: snapshotCount })
+        });
         console.error("[backfill] failed; continuing worker startup", error);
       }
     } else {

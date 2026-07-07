@@ -28,7 +28,7 @@ Local Docker Compose
   -> nginx service
 ```
 
-The Vercel web target does not run worker loops and does not depend on Docker or Docker network hostnames. The worker target runs separately as a long-lived Node process. The database target is any normal hosted PostgreSQL database such as Supabase, Neon, Railway Postgres, or a managed VPS Postgres.
+The Vercel web target does not run worker loops and does not depend on Docker or Docker network hostnames. The worker target runs separately as a long-lived Node process. The production database target is Supabase PostgreSQL.
 
 ## Features
 
@@ -90,8 +90,9 @@ curl http://localhost/api/worker-status
 - `.env.example`: local full-stack Docker development
 - `.env.vercel.example`: Vercel web target
 - `.env.worker.example`: Railway/Fly/Render/VPS worker target
+- `.env.supabase.example`: Supabase-backed Vercel web target
 
-Do not use Docker-only hostnames such as `postgres` in Vercel or hosted workers. Use the external Postgres connection string from Supabase, Neon, Railway Postgres, or your VPS database.
+Do not use Docker-only hostnames such as `postgres` in Vercel or hosted workers. Use Supabase's pooled connection string for `DATABASE_URL` when available and the direct connection string for `DIRECT_URL`.
 
 ## Railway Worker
 
@@ -118,7 +119,17 @@ When a metric is hidden, APIs and pages return the reason, usually `Collecting h
 
 `npm run backfill` uses Perpl candle history where available. Candle backfill can improve price, volume, volatility, and future-return coverage. It does not reconstruct exact historical funding, open interest, orderbook imbalance, or on-chain context. Backfilled rows are marked internally so funding-based similarity does not treat reconstructed funding as exact history.
 
-Set `BACKFILL_ON_START=true` on the worker if you want a guarded startup backfill when the database has fewer than `BACKFILL_MIN_SNAPSHOTS` snapshots.
+Set `BACKFILL_ON_START=true` on the worker if you want a guarded startup backfill when the database has fewer than `BACKFILL_MIN_SNAPSHOTS` snapshots. The worker records successful backfills and will not repeat startup backfill unless `BACKFILL_FORCE=true`.
+
+## Retention
+
+To protect free-tier usage:
+
+- 5-minute `MarketSnapshot` rows are kept for 30 days by default.
+- Older raw snapshots are aggregated into `MarketHourlySnapshot` rows before deletion.
+- Hourly summaries are kept indefinitely.
+- Raw on-chain logs are pruned after 7 days when on-chain indexing is enabled.
+- On-chain indexing is disabled by default for production migration.
 
 ## On-chain Status States
 
@@ -140,16 +151,7 @@ Recommended production split:
 GitHub repo
   -> Vercel web app
   -> Railway worker
-  -> Supabase or Neon Postgres
-```
-
-Alternative split:
-
-```text
-GitHub repo
-  -> Vercel web app
-  -> VPS worker
-  -> Supabase or Neon Postgres
+  -> Supabase Postgres
 ```
 
 Production migration commands:

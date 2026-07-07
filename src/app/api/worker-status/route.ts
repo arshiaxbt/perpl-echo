@@ -40,6 +40,9 @@ export async function GET() {
       }
     | null
     | undefined;
+  const workerAgeMinutes = lastSuccessfulWorkerRun?.finishedAt
+    ? Math.max(0, (Date.now() - lastSuccessfulWorkerRun.finishedAt.getTime()) / 60_000)
+    : null;
 
   return NextResponse.json(
     jsonSafePublic({
@@ -49,6 +52,16 @@ export async function GET() {
       lastSuccessfulCollectorRun,
       latestIndexerBlock: latestIndexerCursor?.lastProcessedBlock ?? stats?.onchain?.latestBlock ?? null,
       snapshotFreshness: snapshotFreshnessStatus(latestSnapshot?.timestamp ?? null),
+      workerFreshness: {
+        ageMinutes: workerAgeMinutes,
+        stale: workerAgeMinutes === null || workerAgeMinutes > 15,
+        reason:
+          workerAgeMinutes === null
+            ? "No successful worker run recorded."
+            : workerAgeMinutes > 15
+              ? "No successful worker run in the last 15 minutes."
+              : null
+      },
       onchain,
       latestDerivedJobRun: latestWorkerRun
         ? {

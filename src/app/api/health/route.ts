@@ -30,9 +30,15 @@ export async function GET() {
     latestSnapshotTimestamp = latestSnapshot?.timestamp ?? null;
     latestOnchainProcessedBlock = latestCursor?.lastProcessedBlock.toString() ?? null;
     const freshness = snapshotFreshnessStatus(latestSnapshotTimestamp);
+    const workerAgeMinutes = lastSuccessfulWorkerRun?.finishedAt
+      ? Math.max(0, (Date.now() - lastSuccessfulWorkerRun.finishedAt.getTime()) / 60_000)
+      : null;
     const warnings = [
       freshness.reason,
       lastSuccessfulWorkerRun ? null : "No successful worker run recorded.",
+      workerAgeMinutes !== null && workerAgeMinutes > 15
+        ? "No successful worker run in the last 15 minutes."
+        : null,
       lastSuccessfulCollectorRun ? null : "No successful collector run recorded."
     ].filter((warning): warning is string => Boolean(warning));
 
@@ -48,6 +54,10 @@ export async function GET() {
         onchain,
         lastSuccessfulWorkerRun,
         lastSuccessfulCollectorRun,
+        workerFreshness: {
+          ageMinutes: workerAgeMinutes,
+          stale: workerAgeMinutes === null || workerAgeMinutes > 15
+        },
         warnings,
         message
       },

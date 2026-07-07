@@ -23,6 +23,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://perpl:perpl@postgres:5432/perpl_market_state_search?schema=public
+      DIRECT_URL: postgresql://perpl:perpl@postgres:5432/perpl_market_state_search?schema=public
       NODE_OPTIONS: --max-old-space-size=384
     depends_on:
       postgres:
@@ -40,6 +41,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://perpl:perpl@postgres:5432/perpl_market_state_search?schema=public
+      DIRECT_URL: postgresql://perpl:perpl@postgres:5432/perpl_market_state_search?schema=public
       NODE_OPTIONS: --max-old-space-size=384
     depends_on:
       postgres:

@@ -8,7 +8,7 @@ type Params = {
 
 export async function GET(_request: Request, { params }: Params) {
   const { symbol } = await params;
-  const result = await analyzeMarketState(symbol);
+  const result = await analyzeMarketState(symbol, { persist: false });
   if (!result) return NextResponse.json({ error: "Cross-market echo unavailable" }, { status: 404 });
   return NextResponse.json(jsonSafePublic(result.crossMarket));
 }
