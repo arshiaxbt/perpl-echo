@@ -81,7 +81,7 @@ BACKFILL_DAYS=7
 BACKFILL_MIN_SNAPSHOTS=100
 ```
 
-The workflow is `.github/workflows/worker.yml`. It runs every 5 minutes when GitHub scheduling allows it and can also be run manually with `workflow_dispatch`.
+The workflow is `.github/workflows/worker.yml`. It runs every 10 minutes at offset minutes to reduce GitHub scheduler congestion and can also be run manually with `workflow_dispatch`.
 
 ## Free-Tier Protection
 
@@ -95,7 +95,7 @@ The workflow is `.github/workflows/worker.yml`. It runs every 5 minutes when Git
 - Older snapshots are aggregated into hourly summaries in `MarketHourlySnapshot`.
 - Raw on-chain logs are retained for 7 days only when on-chain indexing is enabled.
 - Worker health warns when no successful run occurred in 15 minutes.
-- Snapshot health warns when the latest snapshot is older than 10 minutes.
+- Snapshot health warns when the latest snapshot is older than 15 minutes.
 
 ## Migration Checklist
 

@@ -101,7 +101,7 @@ Production collection runs from `.github/workflows/worker.yml`:
 npm run worker:once
 ```
 
-The workflow is scheduled every 5 minutes when GitHub allows it and also supports manual `workflow_dispatch`. It must use `WORKER_NAME=perpl-echo-github-actions`. Local `npm run worker` remains available for development only.
+The workflow is scheduled every 10 minutes at offset minutes to reduce GitHub scheduler congestion and also supports manual `workflow_dispatch`. It must use `WORKER_NAME=perpl-echo-github-actions`. Local `npm run worker` remains available for development only.
 
 ## Data Quality Rules
 

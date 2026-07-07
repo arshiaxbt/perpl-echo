@@ -6,8 +6,8 @@ export const DATA_QUALITY_THRESHOLDS = {
   confidenceSnapshots: 100,
   regimeMatches: 30,
   outcomeMatches: 10,
-  staleSnapshotMinutes: 10,
-  healthySnapshotMinutes: 10
+  staleSnapshotMinutes: 15,
+  healthySnapshotMinutes: 15
 };
 
 export type ReadinessStatus = "ready" | "limited" | "hidden";
