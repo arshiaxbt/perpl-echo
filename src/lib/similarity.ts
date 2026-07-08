@@ -286,6 +286,7 @@ function buildMatches(
 ) {
   const fundingRates = historical.filter((snapshot) => !isBackfilled(snapshot)).map((snapshot) => snapshot.fundingRate);
   const currentOnchain = nearestIntelligence(current, onchainIntelligence);
+  const outcomeIndex = buildOutcomeIndex(historical);
   return searchPool
     .map((snapshot) => {
       const candidateOnchain = nearestIntelligence(snapshot, onchainIntelligence);
@@ -307,7 +308,7 @@ function buildMatches(
         similarity,
         echoScore: echoBreakdown.echoScore,
         echoBreakdown,
-        outcome: futureOutcome(snapshot, historical)
+        outcome: futureOutcome(snapshot, outcomeIndex)
       };
     })
     .filter(
@@ -414,17 +415,27 @@ function weightedSimilarity(a: Partial<Record<FeatureName, number>>, b: Partial<
   return Math.max(0, Math.min(1, 1 / (1 + Math.sqrt(distance))));
 }
 
-function futureOutcome(snapshot: MarketSnapshot, marketSnapshots: MarketSnapshot[]): FutureOutcome | null {
-  const after = marketSnapshots.filter((item) => item.timestamp > snapshot.timestamp);
-  if (!after.length) return null;
+function buildOutcomeIndex(snapshots: MarketSnapshot[]) {
+  const sorted = [...snapshots].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  return {
+    snapshots: sorted,
+    timestamps: sorted.map((snapshot) => snapshot.timestamp.getTime())
+  };
+}
 
-  const oneHour = nearestAfter(after, snapshot.timestamp.getTime() + 60 * 60 * 1000);
-  const fourHour = nearestAfter(after, snapshot.timestamp.getTime() + 4 * 60 * 60 * 1000);
-  const day = nearestAfter(after, snapshot.timestamp.getTime() + 24 * 60 * 60 * 1000);
-  if (!oneHour && !fourHour && !day && after.length < 3) return null;
+type OutcomeIndex = ReturnType<typeof buildOutcomeIndex>;
 
-  const window8h = after.filter((item) => item.timestamp.getTime() <= snapshot.timestamp.getTime() + 8 * 60 * 60 * 1000);
-  const window24h = after.filter((item) => item.timestamp.getTime() <= snapshot.timestamp.getTime() + 24 * 60 * 60 * 1000);
+function futureOutcome(snapshot: MarketSnapshot, index: OutcomeIndex): FutureOutcome | null {
+  const afterStart = upperBound(index.timestamps, snapshot.timestamp.getTime());
+  if (afterStart >= index.snapshots.length) return null;
+
+  const oneHour = nearestAfter(index, snapshot.timestamp.getTime() + 60 * 60 * 1000, afterStart);
+  const fourHour = nearestAfter(index, snapshot.timestamp.getTime() + 4 * 60 * 60 * 1000, afterStart);
+  const day = nearestAfter(index, snapshot.timestamp.getTime() + 24 * 60 * 60 * 1000, afterStart);
+  if (!oneHour && !fourHour && !day && index.snapshots.length - afterStart < 3) return null;
+
+  const window8h = windowAfter(index, afterStart, snapshot.timestamp.getTime() + 8 * 60 * 60 * 1000);
+  const window24h = windowAfter(index, afterStart, snapshot.timestamp.getTime() + 24 * 60 * 60 * 1000);
   const fundingComparable = !isBackfilled(snapshot) && day && !isBackfilled(day);
   const fundingNormalized =
     fundingComparable && window8h.length > 0
@@ -472,11 +483,43 @@ function fundingRegimeMetrics(current: MarketSnapshot, historical: MarketSnapsho
   };
 }
 
-function nearestAfter(snapshots: MarketSnapshot[], targetMs: number) {
+function nearestAfter(index: OutcomeIndex, targetMs: number, lowerIndex = 0) {
   const toleranceMs = 15 * 60 * 1000;
-  return snapshots
-    .filter((snapshot) => Math.abs(snapshot.timestamp.getTime() - targetMs) <= toleranceMs)
-    .sort((a, b) => Math.abs(a.timestamp.getTime() - targetMs) - Math.abs(b.timestamp.getTime() - targetMs))[0];
+  const insertion = Math.max(lowerIndex, lowerBound(index.timestamps, targetMs));
+  const candidates = [insertion - 1, insertion, insertion + 1]
+    .filter((itemIndex) => itemIndex >= lowerIndex && itemIndex >= 0 && itemIndex < index.snapshots.length)
+    .map((itemIndex) => index.snapshots[itemIndex])
+    .filter((item) => Math.abs(item.timestamp.getTime() - targetMs) <= toleranceMs)
+    .sort((a, b) => Math.abs(a.timestamp.getTime() - targetMs) - Math.abs(b.timestamp.getTime() - targetMs));
+
+  return candidates[0] ?? null;
+}
+
+function windowAfter(index: OutcomeIndex, startIndex: number, endMs: number) {
+  const endIndex = upperBound(index.timestamps, endMs);
+  return index.snapshots.slice(startIndex, endIndex);
+}
+
+function lowerBound(values: number[], target: number) {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (values[mid] < target) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
+function upperBound(values: number[], target: number) {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (values[mid] <= target) low = mid + 1;
+    else high = mid;
+  }
+  return low;
 }
 
 function averageOutcome(outcomes: FutureOutcome[]) {
