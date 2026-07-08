@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { ArrowRight, Database, RadioTower, Sparkles } from "lucide-react";
+import { ArrowRight, Database, Sparkles } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { fundingPercentile, rarityLabel, rarityScore } from "@/lib/metrics";
 import { num, pct } from "@/lib/utils";
 import { AnalysisButton } from "@/components/analysis-button";
+import { BrandLogo } from "@/components/brand-logo";
 import { LiveRefresh } from "@/components/live-refresh";
 import { LocalTime } from "@/components/local-time";
 import { Badge } from "@/components/ui/badge";
@@ -103,7 +104,7 @@ export default async function HomePage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex h-20 items-center justify-center border border-primary/20 bg-primary/10 text-primary">
-              <RadioTower className="h-9 w-9" />
+              <BrandLogo className="h-12 w-12" imageClassName="drop-shadow-[0_0_18px_hsl(var(--primary)/0.35)]" priority />
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-muted-foreground">Markets tracked</span>

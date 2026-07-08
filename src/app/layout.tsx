@@ -1,11 +1,27 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Activity, Bookmark, Database, Home, RadioTower } from "lucide-react";
+import { Activity, Bookmark, Database, Home } from "lucide-react";
+import { BrandLogo, PERPL_ECHO_LOGO_URL } from "@/components/brand-logo";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Perpl Echo",
-  description: "Find similar historical Perpl market states and their average outcomes."
+  description: "Find similar historical Perpl market states and their average outcomes.",
+  icons: {
+    icon: PERPL_ECHO_LOGO_URL,
+    apple: PERPL_ECHO_LOGO_URL
+  },
+  openGraph: {
+    title: "Perpl Echo",
+    description: "Find where today's market has echoed through history.",
+    images: [PERPL_ECHO_LOGO_URL]
+  },
+  twitter: {
+    card: "summary",
+    title: "Perpl Echo",
+    description: "Find where today's market has echoed through history.",
+    images: [PERPL_ECHO_LOGO_URL]
+  }
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -16,9 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <header className="border-b border-border/80 bg-background/80 backdrop-blur-xl">
             <div className="container flex min-h-16 flex-wrap items-center justify-between gap-3 py-3">
               <Link href="/" className="flex items-center gap-3 font-semibold">
-                <span className="flex h-9 w-9 items-center justify-center rounded-sm border border-primary/50 bg-primary/15 text-primary shadow-[0_0_32px_hsl(var(--primary)/0.28)]">
-                  <RadioTower className="h-5 w-5" />
-                </span>
+                <BrandLogo className="h-9 w-9 border border-primary/50 bg-primary/15 p-1 shadow-[0_0_32px_hsl(var(--primary)/0.28)]" priority />
                 <span className="tracking-wide">Perpl Echo</span>
               </Link>
               <nav className="flex items-center gap-2 text-sm text-muted-foreground">

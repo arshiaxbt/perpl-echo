@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, GitBranch, History, Network, RadioTower } from "lucide-react";
+import { ArrowLeft, GitBranch, History, Network } from "lucide-react";
 import { AnalysisButton } from "@/components/analysis-button";
+import { BrandLogo } from "@/components/brand-logo";
 import { EchoActions } from "@/components/echo/echo-actions";
 import { LiveRefresh } from "@/components/live-refresh";
 import { LocalTime } from "@/components/local-time";
@@ -119,7 +120,7 @@ export default async function MarketPage({ params }: Params) {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Average Outcome</CardTitle>
-              <RadioTower className="h-4 w-4 text-primary" />
+              <BrandLogo className="h-5 w-5" />
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
