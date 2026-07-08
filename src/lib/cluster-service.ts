@@ -95,11 +95,20 @@ export async function ensureClustersForMarket(marketId: number) {
     clusterByKey.set(clusterKey, cluster);
   }
 
+  const snapshotIdsByClusterId = new Map<string, string[]>();
   for (const snapshot of classified) {
     const fingerprint = clusterFingerprint(snapshot, fundingRates);
     const cluster = clusterByKey.get(`${marketId}:${fingerprint.keyPart}`);
-    if (cluster && snapshot.clusterId !== cluster.id) {
-      await prisma.marketSnapshot.update({ where: { id: snapshot.id }, data: { clusterId: cluster.id } });
+    if (!cluster || snapshot.clusterId === cluster.id) continue;
+    snapshotIdsByClusterId.set(cluster.id, [...(snapshotIdsByClusterId.get(cluster.id) ?? []), snapshot.id]);
+  }
+
+  for (const [clusterId, ids] of snapshotIdsByClusterId) {
+    for (const chunk of chunks(ids, 500)) {
+      await prisma.marketSnapshot.updateMany({
+        where: { id: { in: chunk } },
+        data: { clusterId }
+      });
     }
   }
 
@@ -297,4 +306,12 @@ function percentTrue(values: Array<boolean | null>) {
 
 function pctChange(current: number, previous: number) {
   return previous > 0 ? ((current - previous) / previous) * 100 : 0;
+}
+
+function chunks<T>(items: T[], size: number) {
+  const result: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
 }

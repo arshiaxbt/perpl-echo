@@ -103,6 +103,17 @@ npm run worker:once
 
 The workflow is scheduled every 10 minutes at offset minutes to reduce GitHub scheduler congestion and also supports manual `workflow_dispatch`. It must use `WORKER_NAME=perpl-echo-github-actions`. Local `npm run worker` remains available for development only.
 
+For a fresh Supabase database, run a one-time backfill from GitHub Actions:
+
+```text
+Actions -> Perpl Echo Worker -> Run workflow
+backfill=true
+backfill_days=7
+branch=main
+```
+
+Scheduled runs keep backfill disabled, so this stays within free-tier limits.
+
 ## Data Quality Rules
 
 Perpl Echo intentionally hides evidence metrics until there is enough data:
@@ -119,6 +130,8 @@ When a metric is hidden, APIs and pages return the reason, usually `Collecting h
 `npm run backfill` uses Perpl candle history where available. Candle backfill can improve price, volume, volatility, and future-return coverage. It does not reconstruct exact historical funding, open interest, orderbook imbalance, or on-chain context. Backfilled rows are marked internally so funding-based similarity does not treat reconstructed funding as exact history.
 
 Set `BACKFILL_ON_START=true` on the worker if you want a guarded startup backfill when the database has fewer than `BACKFILL_MIN_SNAPSHOTS` snapshots. The worker records successful backfills and will not repeat startup backfill unless `BACKFILL_FORCE=true`.
+
+On GitHub Actions, prefer the manual `backfill=true` workflow input instead of changing the scheduled secrets.
 
 ## Retention
 

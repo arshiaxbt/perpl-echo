@@ -83,10 +83,22 @@ BACKFILL_MIN_SNAPSHOTS=100
 
 The workflow is `.github/workflows/worker.yml`. It runs every 10 minutes at offset minutes to reduce GitHub scheduler congestion and can also be run manually with `workflow_dispatch`.
 
+### One-Time Historical Backfill
+
+Fresh Supabase databases start with no historical evidence, so rarity, confidence, regime statistics, and historical outcomes stay hidden until enough snapshots exist. Use the manual GitHub Actions inputs for a free one-time candle backfill:
+
+1. Go to GitHub -> Actions -> Perpl Echo Worker.
+2. Click `Run workflow`.
+3. Set `backfill=true`.
+4. Set `backfill_days=7`.
+5. Run on `main`.
+
+Scheduled runs keep `BACKFILL_ON_START=false`, so this does not repeat automatically. Candle backfill improves price, volume, volatility, regime, cluster, transition, and future-return evidence. It does not reconstruct exact historical funding, open interest, orderbook imbalance, or on-chain activity.
+
 ## Free-Tier Protection
 
 - `worker:once` exits after one cycle.
-- Backfill is disabled for scheduled runs by default.
+- Backfill is disabled for scheduled runs by default and only runs when the manual workflow input enables it.
 - On-chain indexing is disabled by default.
 - Duplicate snapshots are prevented by a `(marketId, timestamp)` unique constraint.
 - Public APIs strip `rawJson`.

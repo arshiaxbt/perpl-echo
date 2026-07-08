@@ -70,34 +70,62 @@ export async function ensureSnapshotRegime(snapshot: MarketSnapshot) {
   return classification;
 }
 
-export async function classifyMissingRegimes(marketId: number, limit = 5000) {
+export async function classifyMissingRegimes(marketId: number, limit = 20000) {
   const snapshots = await prisma.marketSnapshot.findMany({
     where: {
-      marketId,
-      OR: [{ regime: null }, { regimeConfidence: null }]
+      marketId
     },
     orderBy: { timestamp: "asc" },
     take: limit
   });
 
+  const classified: SnapshotLike[] = [];
+  const updates = new Map<string, { data: Pick<MarketSnapshot, "regime" | "regimeConfidence"> & { regimeReasonsJson: string[] }; ids: string[] }>();
+  let changed = 0;
+
   for (const snapshot of snapshots) {
-    const history = await prisma.marketSnapshot.findMany({
-      where: { marketId, timestamp: { lt: snapshot.timestamp } },
-      orderBy: { timestamp: "desc" },
-      take: 5000
-    });
-    const classification = classifySnapshot(snapshot, history.reverse());
-    await prisma.marketSnapshot.update({
-      where: { id: snapshot.id },
-      data: {
-        regime: classification.regime,
-        regimeConfidence: classification.confidence,
-        regimeReasonsJson: classification.reasons
-      }
-    });
+    if (snapshot.regime && snapshot.regimeConfidence !== null) {
+      classified.push(snapshot);
+      continue;
+    }
+
+    const history = classified.slice(-5000);
+    const classification = classifySnapshot(snapshot, history);
+    const data = {
+      regime: classification.regime,
+      regimeConfidence: classification.confidence,
+      regimeReasonsJson: classification.reasons
+    };
+    const key = JSON.stringify(data);
+    const group = updates.get(key) ?? { data, ids: [] };
+    group.ids.push(snapshot.id);
+    updates.set(key, group);
+    classified.push(snapshot);
+    changed += 1;
   }
 
-  return snapshots.length;
+  for (const group of updates.values()) {
+    for (const ids of chunks(group.ids, 500)) {
+      await prisma.marketSnapshot.updateMany({
+        where: { id: { in: ids } },
+        data: {
+          regime: group.data.regime,
+          regimeConfidence: group.data.regimeConfidence,
+          regimeReasonsJson: group.data.regimeReasonsJson
+        }
+      });
+    }
+  }
+
+  return changed;
+}
+
+function chunks<T>(items: T[], size: number) {
+  const result: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
 }
 
 export function classifySnapshot(snapshot: SnapshotLike, history: SnapshotLike[]): RegimeClassification {

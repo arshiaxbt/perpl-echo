@@ -4,6 +4,19 @@ on:
   schedule:
     - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
+    inputs:
+      backfill:
+        description: "Run one-time historical candle backfill"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      backfill_days:
+        description: "Backfill lookback days when backfill=true"
+        required: false
+        default: "7"
 
 concurrency:
   group: perpl-echo-worker
@@ -12,7 +25,7 @@ concurrency:
 jobs:
   worker-once:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 12
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       DIRECT_URL: ${{ secrets.DIRECT_URL }}
@@ -26,9 +39,9 @@ jobs:
       WORKER_ENABLED: ${{ secrets.WORKER_ENABLED }}
       COLLECTOR_INTERVAL_MS: "300000"
       ONCHAIN_POLL_INTERVAL_MS: "5000"
-      BACKFILL_ON_START: ${{ secrets.BACKFILL_ON_START }}
-      BACKFILL_FORCE: "false"
-      BACKFILL_DAYS: ${{ secrets.BACKFILL_DAYS }}
+      BACKFILL_ON_START: ${{ github.event_name == 'workflow_dispatch' && inputs.backfill == 'true' && 'true' || secrets.BACKFILL_ON_START }}
+      BACKFILL_FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.backfill == 'true' && 'true' || 'false' }}
+      BACKFILL_DAYS: ${{ github.event_name == 'workflow_dispatch' && inputs.backfill == 'true' && inputs.backfill_days || secrets.BACKFILL_DAYS }}
       BACKFILL_MIN_SNAPSHOTS: ${{ secrets.BACKFILL_MIN_SNAPSHOTS }}
       RETENTION_ENABLED: "true"
       RAW_SNAPSHOT_RETENTION_DAYS: "30"

@@ -3,6 +3,7 @@ import { env } from "@/lib/env";
 import { effectiveMarketSymbol, PerplApiClient, scaleFundingRate, scalePrice } from "@/lib/perpl";
 import { floorToFiveMinutes, marketAssetsFromPerpl } from "@/lib/metrics";
 import { classifyMissingRegimes } from "@/lib/regime";
+import type { Prisma } from "@prisma/client";
 import type { PerplCandle, PerplMarket } from "@/lib/perpl";
 
 const RESOLUTION_SECONDS = 300;
@@ -47,30 +48,18 @@ export async function backfillHistoricalCandles(days = DEFAULT_DAYS) {
 
     const candles = await fetchCandleHistory(client, perplMarket.id, startMs, endMs);
     console.log(`[backfill] ${symbol} candles=${candles.length}`);
-    let saved = 0;
+    const snapshots: Prisma.MarketSnapshotCreateManyInput[] = candles
+      .map((_, index) => snapshotFromCandle(perplMarket, candles, index))
+      .filter((snapshot): snapshot is NonNullable<ReturnType<typeof snapshotFromCandle>> => Boolean(snapshot))
+      .map((snapshot) => ({
+        marketId: market.id,
+        ...snapshot,
+        rawJson: snapshot.rawJson as object
+      }));
 
-    for (let index = 0; index < candles.length; index += 1) {
-      const snapshot = snapshotFromCandle(perplMarket, candles, index);
-      if (!snapshot) continue;
+    const saved = await createSnapshotsInBatches(snapshots);
 
-      await prisma.marketSnapshot.upsert({
-        where: {
-          marketId_timestamp: {
-            marketId: market.id,
-            timestamp: snapshot.timestamp
-          }
-        },
-        update: {},
-        create: {
-          marketId: market.id,
-          ...snapshot,
-          rawJson: snapshot.rawJson as object
-        }
-      });
-      saved += 1;
-    }
-
-    console.log(`[backfill] ${symbol} saved=${saved}`);
+    console.log(`[backfill] ${symbol} saved=${saved} skipped=${Math.max(0, snapshots.length - saved)}`);
     await classifyMissingRegimes(market.id);
   }
 }
@@ -157,6 +146,19 @@ function sumVolumes(candles: PerplCandle[]) {
 
 function dedupeCandles(candles: PerplCandle[]) {
   return Array.from(new Map(candles.map((candle) => [candle.t, candle])).values());
+}
+
+async function createSnapshotsInBatches(snapshots: Prisma.MarketSnapshotCreateManyInput[]) {
+  const batchSize = 500;
+  let saved = 0;
+  for (let start = 0; start < snapshots.length; start += batchSize) {
+    const result = await prisma.marketSnapshot.createMany({
+      data: snapshots.slice(start, start + batchSize),
+      skipDuplicates: true
+    });
+    saved += result.count;
+  }
+  return saved;
 }
 
 function isFiniteNumber(value: number | null | undefined): value is number {
