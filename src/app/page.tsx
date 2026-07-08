@@ -71,13 +71,13 @@ export default async function HomePage() {
             Perpl Echo
           </h1>
           <p className="max-w-3xl text-lg leading-7 text-foreground/86 md:text-2xl">
-            Find where today&apos;s market has echoed through history.
+            Historical market intelligence for Perpl.
           </p>
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-            Public market data, raw contract events, and outcome samples. No authentication, private keys, trading, paid
-            data, or AI APIs.
+            Perpl Echo helps traders compare the current Perpl market state with similar historical states, understand
+            market regimes, and see what usually happened next.
           </p>
-          <div className="grid max-w-3xl gap-2 pt-3 sm:grid-cols-3">
+          <div className="grid max-w-3xl gap-2 pt-3 sm:grid-cols-2">
             <div className="border border-border bg-background/55 p-4">
               <div className="text-2xl font-semibold">5m</div>
               <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -88,12 +88,6 @@ export default async function HomePage() {
               <div className="text-2xl font-semibold">10</div>
               <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Historical matches
-              </div>
-            </div>
-            <div className="border border-border bg-background/55 p-4">
-              <div className="text-2xl font-semibold">143</div>
-              <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Monad chain id
               </div>
             </div>
           </div>

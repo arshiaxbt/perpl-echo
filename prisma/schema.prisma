@@ -160,17 +160,25 @@ model MarketStateTransition {
 }
 
 model EchoVote {
-  id            String   @id @default(cuid())
-  analysisHash  String
-  symbol        String
-  walletAddress String?
-  voteValue     Int
-  signature     String?
-  message       String?
-  createdAt     DateTime @default(now())
+  id                  String    @id @default(cuid())
+  analysisHash        String
+  symbol              String
+  snapshotTimestamp   DateTime?
+  horizonHours        Int       @default(4)
+  voteValue           String
+  browserId           String?
+  walletAddress       String?
+  signature           String?
+  message             String?
+  closedAt            DateTime?
+  actualReturnPercent Float?
+  actualOutcome       String?
+  createdAt           DateTime  @default(now())
 
-  @@index([analysisHash])
+  @@index([analysisHash, horizonHours])
   @@index([symbol, createdAt])
+  @@index([browserId, analysisHash, horizonHours])
+  @@index([walletAddress, analysisHash, horizonHours])
 }
 
 model OnchainBlockCursor {

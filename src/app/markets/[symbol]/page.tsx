@@ -366,7 +366,7 @@ export default async function MarketPage({ params }: Params) {
 
         <Card>
           <CardHeader>
-            <CardTitle>Bookmark / Vote</CardTitle>
+            <CardTitle>Bookmark / Echo Consensus</CardTitle>
           </CardHeader>
           <CardContent>
             <EchoActions

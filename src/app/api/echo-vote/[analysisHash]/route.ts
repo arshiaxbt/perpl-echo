@@ -1,15 +1,21 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { buildConsensus } from "../shared";
 
 type Params = {
   params: Promise<{ analysisHash: string }>;
 };
 
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   const { analysisHash } = await params;
-  const [upvotes, downvotes] = await Promise.all([
-    prisma.echoVote.count({ where: { analysisHash, voteValue: 1 } }),
-    prisma.echoVote.count({ where: { analysisHash, voteValue: -1 } })
-  ]);
-  return NextResponse.json({ analysisHash, upvotes, downvotes, score: upvotes - downvotes });
+  const url = new URL(request.url);
+  const symbol = url.searchParams.get("symbol");
+  const timestamp = url.searchParams.get("snapshotTimestamp");
+  const snapshotTimestamp = timestamp ? new Date(timestamp) : null;
+  const consensus = await buildConsensus({
+    analysisHash,
+    symbol,
+    snapshotTimestamp: snapshotTimestamp && Number.isFinite(snapshotTimestamp.getTime()) ? snapshotTimestamp : null,
+    horizonHours: 4
+  });
+  return NextResponse.json(consensus);
 }

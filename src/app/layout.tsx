@@ -6,20 +6,20 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Perpl Echo",
-  description: "Find similar historical Perpl market states and their average outcomes.",
+  description: "Historical market intelligence for Perpl.",
   icons: {
     icon: PERPL_ECHO_LOGO_URL,
     apple: PERPL_ECHO_LOGO_URL
   },
   openGraph: {
     title: "Perpl Echo",
-    description: "Find where today's market has echoed through history.",
+    description: "Historical market intelligence for Perpl.",
     images: [PERPL_ECHO_LOGO_URL]
   },
   twitter: {
     card: "summary",
     title: "Perpl Echo",
-    description: "Find where today's market has echoed through history.",
+    description: "Historical market intelligence for Perpl.",
     images: [PERPL_ECHO_LOGO_URL]
   }
 };
