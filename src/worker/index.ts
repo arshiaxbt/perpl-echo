@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureAllClusters } from "@/lib/cluster-service";
 import { classifyMissingRegimes } from "@/lib/regime";
 import { hasSuccessfulBackfillRun, recordBackfillRun, runRetentionMaintenance } from "@/lib/retention";
+import { STALE_RUNNING_WORKER_MINUTES } from "@/lib/worker-status";
 import { collectSnapshotsOnce } from "./collector";
 import { runOnchainIndexerOnce } from "./onchain-indexer";
 import { backfillHistoricalCandles } from "./backfill";
@@ -57,6 +58,7 @@ async function runDerivedJobs() {
 
 async function runWorkerCycle(options: WorkerCycleOptions) {
   const started = Date.now();
+  await markStaleRunningWorkerRuns();
   const run = await prisma.workerRun.create({
     data: {
       workerName: env.WORKER_NAME,
@@ -142,6 +144,23 @@ async function runWorkerCycle(options: WorkerCycleOptions) {
     });
     throw error;
   }
+}
+
+async function markStaleRunningWorkerRuns() {
+  const cutoff = new Date(Date.now() - STALE_RUNNING_WORKER_MINUTES * 60_000);
+  await prisma.workerRun.updateMany({
+    where: {
+      workerName: env.WORKER_NAME,
+      status: "running",
+      startedAt: { lt: cutoff },
+      finishedAt: null
+    },
+    data: {
+      status: "failed",
+      finishedAt: new Date(),
+      message: "Marked failed because the previous run exceeded the worker timeout."
+    }
+  });
 }
 
 function delay(ms: number) {

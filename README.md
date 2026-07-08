@@ -101,7 +101,7 @@ Production collection runs from `.github/workflows/worker.yml`:
 npm run worker:once
 ```
 
-The workflow is scheduled every 10 minutes at offset minutes to reduce GitHub scheduler congestion and also supports manual `workflow_dispatch`. It must use `WORKER_NAME=perpl-echo-github-actions`. Local `npm run worker` remains available for development only.
+The workflow is scheduled every 10 minutes at offset minutes to reduce GitHub scheduler congestion and also supports manual `workflow_dispatch`. Only one worker run executes at a time, and scheduled runs wait behind a manual backfill instead of canceling it. It must use `WORKER_NAME=perpl-echo-github-actions`. Local `npm run worker` remains available for development only.
 
 For a fresh Supabase database, run a one-time backfill from GitHub Actions:
 

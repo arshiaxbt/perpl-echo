@@ -3,12 +3,13 @@ import { snapshotFreshnessStatus } from "@/lib/data-quality";
 import { jsonSafePublic } from "@/lib/json";
 import { getOnchainStatus } from "@/lib/onchain";
 import { prisma } from "@/lib/prisma";
-import { runnerTypeFromWorkerName, withRunnerType } from "@/lib/worker-status";
+import { BACKFILL_WORKER_NAME, effectiveWorkerStatus, runnerTypeFromWorkerName, withRunnerType } from "@/lib/worker-status";
 
 export async function GET() {
   const [
     latestWorkerRun,
     lastSuccessfulWorkerRun,
+    latestBackfillRun,
     latestCollectorRun,
     lastSuccessfulCollectorRun,
     latestIndexerCursor,
@@ -19,8 +20,12 @@ export async function GET() {
     transitionCounts,
     onchain
   ] = await Promise.all([
-    prisma.workerRun.findFirst({ orderBy: { startedAt: "desc" } }),
-    prisma.workerRun.findFirst({ where: { status: "success" }, orderBy: { startedAt: "desc" } }),
+    prisma.workerRun.findFirst({ where: { workerName: { not: BACKFILL_WORKER_NAME } }, orderBy: { startedAt: "desc" } }),
+    prisma.workerRun.findFirst({
+      where: { status: "success", workerName: { not: BACKFILL_WORKER_NAME } },
+      orderBy: { startedAt: "desc" }
+    }),
+    prisma.workerRun.findFirst({ where: { workerName: BACKFILL_WORKER_NAME }, orderBy: { startedAt: "desc" } }),
     prisma.collectorRun.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.collectorRun.findFirst({ where: { status: "success" }, orderBy: { startedAt: "desc" } }),
     prisma.onchainBlockCursor.findFirst({ orderBy: { updatedAt: "desc" } }),
@@ -49,6 +54,7 @@ export async function GET() {
     jsonSafePublic({
       latestWorkerRun: withRunnerType(latestWorkerRun),
       lastSuccessfulWorkerRun: withRunnerType(lastSuccessfulWorkerRun),
+      latestBackfillRun,
       runnerType: runnerTypeFromWorkerName(lastSuccessfulWorkerRun?.workerName),
       latestCollectorRun,
       lastSuccessfulCollectorRun,
@@ -69,7 +75,8 @@ export async function GET() {
         ? {
             startedAt: latestWorkerRun.startedAt,
             finishedAt: latestWorkerRun.finishedAt,
-            status: latestWorkerRun.status,
+            status: effectiveWorkerStatus(latestWorkerRun),
+            rawStatus: latestWorkerRun.status,
             regimesClassified: stats?.regimesClassified ?? null,
             clustersUpdated: stats?.clustersUpdated ?? null,
             transitionsUpdated: stats?.transitionsUpdated ?? null

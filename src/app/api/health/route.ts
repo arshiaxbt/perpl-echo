@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { snapshotFreshnessStatus } from "@/lib/data-quality";
 import { getOnchainStatus } from "@/lib/onchain";
-import { runnerTypeFromWorkerName, withRunnerType } from "@/lib/worker-status";
+import { BACKFILL_WORKER_NAME, runnerTypeFromWorkerName, withRunnerType } from "@/lib/worker-status";
 
 export async function GET() {
   let databaseConnected = false;
@@ -22,7 +22,10 @@ export async function GET() {
         orderBy: { updatedAt: "desc" },
         select: { lastProcessedBlock: true }
       }),
-      prisma.workerRun.findFirst({ where: { status: "success" }, orderBy: { startedAt: "desc" } }),
+      prisma.workerRun.findFirst({
+        where: { status: "success", workerName: { not: BACKFILL_WORKER_NAME } },
+        orderBy: { startedAt: "desc" }
+      }),
       prisma.collectorRun.findFirst({ where: { status: "success" }, orderBy: { startedAt: "desc" } }),
       getOnchainStatus()
     ]);

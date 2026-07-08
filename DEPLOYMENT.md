@@ -82,6 +82,7 @@ BACKFILL_MIN_SNAPSHOTS=100
 ```
 
 The workflow is `.github/workflows/worker.yml`. It runs every 10 minutes at offset minutes to reduce GitHub scheduler congestion and can also be run manually with `workflow_dispatch`.
+Only one worker run executes at a time. Scheduled runs wait behind a manual backfill run instead of canceling it.
 
 ### One-Time Historical Backfill
 

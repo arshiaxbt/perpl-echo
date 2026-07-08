@@ -20,12 +20,12 @@ on:
 
 concurrency:
   group: perpl-echo-worker
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   worker-once:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 30
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       DIRECT_URL: ${{ secrets.DIRECT_URL }}
