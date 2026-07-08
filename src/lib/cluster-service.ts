@@ -128,6 +128,66 @@ export async function ensureAllClusters() {
   return { clusters, transitions };
 }
 
+export async function ensureLatestClusters() {
+  const markets = await prisma.market.findMany({ where: { active: true }, select: { id: true } });
+  let clusters = 0;
+  const transitions = 0;
+
+  for (const market of markets) {
+    const snapshots = await prisma.marketSnapshot.findMany({
+      where: { marketId: market.id },
+      orderBy: { timestamp: "desc" },
+      take: 5000
+    });
+    if (!snapshots.length) continue;
+
+    const ordered = snapshots.reverse();
+    const latest = ordered[ordered.length - 1];
+    const fundingRates = ordered.map((snapshot) => snapshot.fundingRate);
+    const fingerprint = clusterFingerprint(latest, fundingRates);
+    const clusterKey = `${market.id}:${fingerprint.keyPart}`;
+    const rows = ordered.filter((snapshot) => clusterFingerprint(snapshot, fundingRates).keyPart === fingerprint.keyPart);
+    const outcomes = rows.map((snapshot) => futureOutcome(snapshot, ordered));
+    const cluster = await prisma.marketStateCluster.upsert({
+      where: { clusterKey },
+      update: {
+        name: clusterNameFromFingerprint(fingerprint),
+        description: describeCluster(fingerprint),
+        regime: fingerprint.regime,
+        sampleSize: rows.length,
+        averageDurationMinutes: averageDuration(rows),
+        averageReturn1h: avg(outcomes.map((outcome) => outcome?.return1h ?? null)),
+        averageReturn4h: avg(outcomes.map((outcome) => outcome?.return4h ?? null)),
+        averageReturn24h: avg(outcomes.map((outcome) => outcome?.return24h ?? null)),
+        fundingNormalizationRate: percentTrue(outcomes.map((outcome) => outcome?.fundingNormalized ?? null)),
+        centroidJson: centroid(rows)
+      },
+      create: {
+        marketId: market.id,
+        clusterKey,
+        name: clusterNameFromFingerprint(fingerprint),
+        description: describeCluster(fingerprint),
+        regime: fingerprint.regime,
+        sampleSize: rows.length,
+        averageDurationMinutes: averageDuration(rows),
+        averageReturn1h: avg(outcomes.map((outcome) => outcome?.return1h ?? null)),
+        averageReturn4h: avg(outcomes.map((outcome) => outcome?.return4h ?? null)),
+        averageReturn24h: avg(outcomes.map((outcome) => outcome?.return24h ?? null)),
+        fundingNormalizationRate: percentTrue(outcomes.map((outcome) => outcome?.fundingNormalized ?? null)),
+        transitionJson: {},
+        centroidJson: centroid(rows)
+      }
+    });
+
+    if (latest.clusterId !== cluster.id) {
+      await prisma.marketSnapshot.update({ where: { id: latest.id }, data: { clusterId: cluster.id } });
+    }
+    clusters += 1;
+  }
+
+  return { clusters, transitions };
+}
+
 export async function currentClusterForMarket(symbol: string) {
   const market = await prisma.market.findUnique({ where: { symbol: symbol.toUpperCase() } });
   if (!market) return null;

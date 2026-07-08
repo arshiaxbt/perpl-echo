@@ -38,6 +38,7 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("true")
     .transform((value) => value === "true"),
+  WORKER_DERIVED_MODE: z.enum(["light", "full"]).default("light"),
   MONAD_RPC_URL: z.string().default(""),
   PERPL_CONTRACT_ADDRESSES: z.string().default(""),
   ONCHAIN_INDEXER_ENABLED: z

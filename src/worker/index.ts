@@ -1,7 +1,7 @@
 import { env } from "@/lib/env";
 import { jsonSafe } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
-import { ensureAllClusters } from "@/lib/cluster-service";
+import { ensureAllClusters, ensureLatestClusters } from "@/lib/cluster-service";
 import { classifyMissingRegimes } from "@/lib/regime";
 import { hasSuccessfulBackfillRun, recordBackfillRun, runRetentionMaintenance } from "@/lib/retention";
 import { STALE_RUNNING_WORKER_MINUTES } from "@/lib/worker-status";
@@ -35,13 +35,19 @@ function requireDatabaseUrl() {
 }
 
 async function runDerivedJobs() {
-  const markets = await prisma.market.findMany({ where: { active: true }, select: { id: true } });
   let regimesClassified = 0;
-  for (const market of markets) {
-    regimesClassified += await classifyMissingRegimes(market.id);
+  let clusters = { clusters: 0, transitions: 0 };
+
+  if (env.WORKER_DERIVED_MODE === "full") {
+    const markets = await prisma.market.findMany({ where: { active: true }, select: { id: true } });
+    for (const market of markets) {
+      regimesClassified += await classifyMissingRegimes(market.id);
+    }
+    clusters = await ensureAllClusters();
+  } else {
+    clusters = await ensureLatestClusters();
   }
 
-  const clusters = await ensureAllClusters();
   const retention = env.RETENTION_ENABLED
     ? await runRetentionMaintenance({
         rawSnapshotDays: env.RAW_SNAPSHOT_RETENTION_DAYS,

@@ -37,6 +37,7 @@ jobs:
       SNAPSHOT_COLLECTOR_ENABLED: ${{ secrets.SNAPSHOT_COLLECTOR_ENABLED }}
       ONCHAIN_INDEXER_ENABLED: ${{ secrets.ONCHAIN_INDEXER_ENABLED }}
       WORKER_ENABLED: ${{ secrets.WORKER_ENABLED }}
+      WORKER_DERIVED_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.backfill == 'true' && 'full' || 'light' }}
       COLLECTOR_INTERVAL_MS: "300000"
       ONCHAIN_POLL_INTERVAL_MS: "5000"
       BACKFILL_ON_START: ${{ github.event_name == 'workflow_dispatch' && inputs.backfill == 'true' && 'true' || secrets.BACKFILL_ON_START }}
