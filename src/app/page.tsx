@@ -77,6 +77,20 @@ export default async function HomePage() {
             Perpl Echo helps traders compare the current Perpl market state with similar historical states, understand
             market regimes, and see what usually happened next.
           </p>
+          <div className="grid max-w-3xl gap-2 pt-3 sm:grid-cols-3">
+            <div className="border border-border bg-background/55 p-4">
+              <div className="text-sm font-semibold">1. Pick a market</div>
+              <div className="mt-1 text-xs leading-5 text-muted-foreground">Start with BTC, ETH, MON, SOL, or another active Perpl market.</div>
+            </div>
+            <div className="border border-border bg-background/55 p-4">
+              <div className="text-sm font-semibold">2. Open Analyze</div>
+              <div className="mt-1 text-xs leading-5 text-muted-foreground">See similar past states, market regime, and average historical outcomes.</div>
+            </div>
+            <div className="border border-border bg-background/55 p-4">
+              <div className="text-sm font-semibold">3. Check evidence</div>
+              <div className="mt-1 text-xs leading-5 text-muted-foreground">Use sample size and confidence to judge whether the history is strong enough.</div>
+            </div>
+          </div>
           <div className="grid max-w-3xl gap-2 pt-3 sm:grid-cols-2">
             <div className="border border-border bg-background/55 p-4">
               <div className="text-2xl font-semibold">5m</div>
@@ -144,6 +158,9 @@ export default async function HomePage() {
             <CardTitle>Markets</CardTitle>
             <Sparkles className="h-4 w-4 text-primary" />
           </div>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Choose a market and click Analyze. The first card gives the plain-English read; detailed metrics stay available on the market page.
+          </p>
         </CardHeader>
         <CardContent>
           {rows.length === 0 ? (
@@ -186,7 +203,9 @@ export default async function HomePage() {
                         ) : null}
                       </TD>
                       <TD className="text-right">
-                        <AnalysisButton symbol={market.symbol} />
+                        <div className="flex justify-end">
+                          <AnalysisButton symbol={market.symbol} />
+                        </div>
                       </TD>
                     </TR>
                   ))}

@@ -124,6 +124,65 @@ function MarketAnalysisFallback({ symbol }: { symbol: string }) {
   );
 }
 
+function cleanLabel(value: string | null | undefined) {
+  return value ? value.replaceAll("_", " ") : "Collecting";
+}
+
+function evidenceLabel(confidenceLabel: string, confidenceScore: number | null) {
+  if (confidenceScore === null) return "Collecting evidence";
+  return cleanLabel(confidenceLabel).toLowerCase() === "very high"
+    ? "Strong history"
+    : cleanLabel(confidenceLabel);
+}
+
+function buildPlainSummary({
+  symbol,
+  regime,
+  confidenceLabel,
+  confidenceScore,
+  sampleSize,
+  matchCount,
+  averageReturn4h,
+  rarityLabel,
+  nextState,
+  nextStateProbability,
+  hiddenAverageOutcome
+}: {
+  symbol: string;
+  regime: string;
+  confidenceLabel: string;
+  confidenceScore: number | null;
+  sampleSize: number;
+  matchCount: number;
+  averageReturn4h: number | null;
+  rarityLabel: string;
+  nextState: string | null;
+  nextStateProbability: number | null;
+  hiddenAverageOutcome: boolean;
+}) {
+  const stateLabel = cleanLabel(regime);
+  const historyLabel = sampleSize > 0 ? `${sampleSize} past states` : "Collecting";
+  const average4hLabel = hiddenAverageOutcome || averageReturn4h === null ? "Collecting" : pct(averageReturn4h, 2);
+  const evidence = evidenceLabel(confidenceLabel, confidenceScore);
+  const nextLabel =
+    nextState && nextStateProbability !== null
+      ? `${cleanLabel(nextState)} (${pct(nextStateProbability * 100, 0)})`
+      : "still collecting transition history";
+  const outcomeSentence =
+    hiddenAverageOutcome || averageReturn4h === null
+      ? "There is not enough forward outcome history yet to show an average 4h result."
+      : `The top ${matchCount} similar historical states averaged ${pct(averageReturn4h, 2)} over the next 4 hours.`;
+
+  return {
+    stateLabel,
+    rarityLabel,
+    historyLabel,
+    average4hLabel,
+    evidenceLabel: evidence,
+    sentence: `${symbol} is currently classified as ${stateLabel}. ${outcomeSentence} Historically, the closest next-state path is ${nextLabel}.`
+  };
+}
+
 async function MarketAnalysis({ symbol }: { symbol: string }) {
   const result = await analyzeMarketState(symbol);
 
@@ -157,6 +216,19 @@ async function MarketAnalysis({ symbol }: { symbol: string }) {
   const hasFundingOutcome = average.fundingNormalizedRate !== null;
   const hasSpread = current.spread !== null;
   const hasOpenInterest = current.openInterest !== null;
+  const summary = buildPlainSummary({
+    symbol: result.market.symbol,
+    regime: result.regime.name,
+    confidenceLabel: result.echoConfidence.confidenceLabel,
+    confidenceScore: result.echoConfidence.confidenceScore,
+    sampleSize: result.sampleSize,
+    matchCount: result.matches.length,
+    averageReturn4h: average.return4h,
+    rarityLabel: result.rarityLabel,
+    nextState: evolutionTransitions[0]?.toCluster.name ?? null,
+    nextStateProbability: evolutionTransitions[0]?.probability ?? null,
+    hiddenAverageOutcome: quality.analysisReadiness.hiddenMetrics.averageOutcome
+  });
   const onchainMetrics = [
     { label: "Recent Events", value: onchain ? `${onchain.recentEventCount}` : null },
     { label: "Latest Block", value: onchain ? onchain.blockNumber.toString() : null },
@@ -179,6 +251,37 @@ async function MarketAnalysis({ symbol }: { symbol: string }) {
 
   return (
     <>
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <Badge className="mb-3 border-primary/40 bg-primary/10 text-primary">Quick read</Badge>
+              <CardTitle className="text-base normal-case tracking-normal">What this market looks like now</CardTitle>
+            </div>
+            <Badge className="border-border text-muted-foreground">{summary.evidenceLabel}</Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Metric label="Market State" value={summary.stateLabel} />
+            <Metric label="Rarity" value={summary.rarityLabel} />
+            <Metric label="History Checked" value={summary.historyLabel} />
+            <Metric label="Avg 4h After Similar States" value={summary.average4hLabel} tone={average.return4h && average.return4h > 0 ? "good" : average.return4h && average.return4h < 0 ? "bad" : "default"} />
+          </div>
+          <div className="rounded-sm border border-border bg-muted/35 p-4 text-sm leading-6 text-foreground/86">
+            {summary.sentence}
+          </div>
+          {quality.analysisReadiness.status !== "ready" ? (
+            <div className="rounded-sm border border-dashed p-4 text-sm leading-6 text-muted-foreground">
+              <div className="font-semibold text-foreground">Still collecting enough evidence for this market.</div>
+              <div className="mt-1">
+                {quality.analysisReadiness.reasons[0] ?? "Some historical sections will fill in as more snapshots are collected."}
+              </div>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
       <section className="grid gap-4 lg:grid-cols-[1fr_0.9fr]">
         <Card>
           <CardHeader>
@@ -427,51 +530,56 @@ async function MarketAnalysis({ symbol }: { symbol: string }) {
         </Card>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>On-chain Intelligence</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {onchainMetrics.length ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {onchainMetrics.map((metric) => (
-                  <Metric key={metric.label} label={metric.label} value={metric.value} />
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-sm border border-dashed p-6 text-sm text-muted-foreground">
-                On-chain intelligence will appear after the Monad indexer has enough raw events.
-              </div>
-            )}
-            {onchain?.unknownEventCount ? (
-              <div className="rounded-sm border border-border bg-muted/35 p-3 text-sm text-muted-foreground">
-                Unknown events are included because exact Perpl ABI decoding is incomplete.
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Bookmark / Echo Consensus</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <EchoActions
+            symbol={result.market.symbol}
+            timestamp={current.timestamp.toISOString()}
+            clusterName={cluster?.name ?? null}
+            regime={result.regime.name}
+            echoScore={result.matches[0]?.echoScore ?? null}
+            rarityScore={result.rarityScore}
+            currentPrice={current.price}
+            fundingRate={current.fundingRate}
+            fundingApr={current.fundingApr}
+            analysisHash={result.analysisHash}
+          />
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Bookmark / Echo Consensus</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <EchoActions
-              symbol={result.market.symbol}
-              timestamp={current.timestamp.toISOString()}
-              clusterName={cluster?.name ?? null}
-              regime={result.regime.name}
-              echoScore={result.matches[0]?.echoScore ?? null}
-              rarityScore={result.rarityScore}
-              currentPrice={current.price}
-              fundingRate={current.fundingRate}
-              fundingApr={current.fundingApr}
-              analysisHash={result.analysisHash}
-            />
-          </CardContent>
-        </Card>
-      </section>
+      <details className="group rounded-sm border border-border/90 bg-card/72 p-4">
+        <summary className="cursor-pointer select-none text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground group-open:text-foreground">
+          Advanced on-chain details
+        </summary>
+        <div className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>On-chain Intelligence</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {onchainMetrics.length ? (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {onchainMetrics.map((metric) => (
+                    <Metric key={metric.label} label={metric.label} value={metric.value} />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-sm border border-dashed p-6 text-sm text-muted-foreground">
+                  On-chain intelligence will appear after the Monad indexer has enough raw events.
+                </div>
+              )}
+              {onchain?.unknownEventCount ? (
+                <div className="rounded-sm border border-border bg-muted/35 p-3 text-sm text-muted-foreground">
+                  Unknown events are included because exact Perpl ABI decoding is incomplete.
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        </div>
+      </details>
 
       <Card>
         <CardHeader>
