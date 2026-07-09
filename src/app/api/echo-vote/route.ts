@@ -16,6 +16,9 @@ const voteSchema = z.object({
   voteValue: z.enum(["BULLISH", "BEARISH"]),
   signature: z.string().max(4096).optional().nullable(),
   message: z.string().max(4096).optional().nullable(),
+  onchainTxHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional().nullable(),
+  onchainChainId: z.number().int().positive().optional().nullable(),
+  onchainWalletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional().nullable(),
   privyUserId: z.string().min(8).optional().nullable(),
   twitter: z
     .object({
@@ -46,6 +49,9 @@ export async function POST(request: Request) {
           rawJson: { privyUserId: verified.privyUserId, twitter: parsed.data.twitter }
         })
       : null;
+  if (profile && !parsed.data.onchainTxHash) {
+    return NextResponse.json({ error: "Confirm the Monad transaction to record this Echo view." }, { status: 400 });
+  }
 
   const identityFilters = [
     profile ? { profileId: profile.id } : undefined,
@@ -84,6 +90,9 @@ export async function POST(request: Request) {
       twitterUsername: profile?.twitterUsername ?? null,
       twitterName: profile?.twitterName ?? null,
       twitterImageUrl: profile?.twitterImageUrl ?? null,
+      onchainTxHash: parsed.data.onchainTxHash ?? null,
+      onchainChainId: parsed.data.onchainChainId ?? null,
+      onchainWalletAddress: parsed.data.onchainWalletAddress ?? null,
       browserId: parsed.data.browserId ?? null,
       walletAddress: parsed.data.walletAddress ?? null,
       voteValue: parsed.data.voteValue,

@@ -26,6 +26,8 @@ export async function GET() {
           voteValue: true,
           actualReturnPercent: true,
           actualOutcome: true,
+          onchainTxHash: true,
+          onchainWalletAddress: true,
           createdAt: true
         }
       }
@@ -50,6 +52,8 @@ function profileSummary(profile: {
     voteValue: string;
     actualReturnPercent: number | null;
     actualOutcome: string | null;
+    onchainTxHash: string | null;
+    onchainWalletAddress: string | null;
     createdAt: Date;
   }>;
 }) {

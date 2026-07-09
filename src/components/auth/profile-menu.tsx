@@ -1,14 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useEffect } from "react";
 import { LogOut, UserRound } from "lucide-react";
 import { getAccessToken, usePrivy } from "@privy-io/react-auth";
 import { Button } from "@/components/ui/button";
 
 export function ProfileMenu() {
-  const { ready, authenticated, user, login, logout } = usePrivy();
+  const { ready, authenticated, user, login, logout, connectOrCreateWallet } = usePrivy();
   const twitter = user?.twitter;
   const username = twitter?.username ? `@${twitter.username}` : null;
   const displayName = twitter?.name ?? username ?? "Perpl Echo user";
@@ -52,8 +51,9 @@ export function ProfileMenu() {
 
   return (
     <div className="flex items-center gap-2">
-      <Link
-        href="/profiles"
+      <button
+        type="button"
+        onClick={connectOrCreateWallet}
         className="flex max-w-[180px] items-center gap-2 rounded-sm border border-border bg-secondary px-2 py-1.5 text-xs text-foreground hover:border-primary/45"
       >
         {twitter?.profilePictureUrl ? (
@@ -71,7 +71,7 @@ export function ProfileMenu() {
           <span className="block truncate font-semibold">{displayName}</span>
           {username ? <span className="block truncate text-muted-foreground">{username}</span> : null}
         </span>
-      </Link>
+      </button>
       <Button type="button" variant="ghost" size="icon" aria-label="Sign out" onClick={logout}>
         <LogOut className="h-4 w-4" />
       </Button>

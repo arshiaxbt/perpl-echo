@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { Bookmark, TrendingDown, TrendingUp, UserRound, Wallet } from "lucide-react";
-import { getAccessToken, usePrivy, type User } from "@privy-io/react-auth";
+import { getAccessToken, usePrivy, useSendTransaction, useWallets, type User } from "@privy-io/react-auth";
+import { stringToHex } from "viem";
 import { Button } from "@/components/ui/button";
+import { MONAD_MAINNET_CHAIN_ID, monadTxUrl } from "@/lib/monad-chain";
 import { num, pct } from "@/lib/utils";
 
 type BookmarkPayload = {
@@ -43,6 +45,13 @@ type ConsensusState = {
   actualReturnPercent: number | null;
   actualOutcome: "BULLISH" | "BEARISH" | "FLAT" | null;
   communityResult: "CORRECT" | "WRONG" | "MIXED" | null;
+  votes?: Array<{
+    id: string;
+    voteValue: ConsensusVote;
+    twitterUsername?: string | null;
+    onchainTxHash?: string | null;
+    onchainWalletAddress?: string | null;
+  }>;
 };
 
 type EthereumProvider = {
@@ -51,6 +60,8 @@ type EthereumProvider = {
 
 export function EchoActions(props: EchoActionsProps) {
   const { ready, authenticated, user, login } = usePrivy();
+  const { wallets } = useWallets();
+  const { sendTransaction } = useSendTransaction();
   const [bookmarked, setBookmarked] = useState(false);
   const [localVote, setLocalVote] = useState<ConsensusVote | null>(null);
   const [consensus, setConsensus] = useState<ConsensusState | null>(null);
@@ -104,7 +115,7 @@ export function EchoActions(props: EchoActionsProps) {
     setStatus("Bookmark signed and saved locally. No gas was used.");
   }
 
-  async function submitConsensus(voteValue: ConsensusVote, sign = false) {
+  async function submitConsensus(voteValue: ConsensusVote) {
     if (localVote) {
       setStatus("Consensus already recorded for this market state.");
       return;
@@ -127,18 +138,45 @@ export function EchoActions(props: EchoActionsProps) {
       setStatus("Could not verify your X profile. Please sign in again.");
       return;
     }
-    let walletAddress: string | null = null;
-    let signature: string | null = null;
+    const onchainWalletAddress = primaryWalletAddress(user, wallets);
+    if (!onchainWalletAddress) {
+      setStatus("Your Privy wallet is still being created. Try again in a moment.");
+      return;
+    }
     const message = `I expect ${voteValue.toLowerCase()} 4H outcome for this Perpl Echo market state: ${props.analysisHash}`;
-    if (sign) {
-      const provider = ethereum();
-      if (!provider) {
-        setStatus("Wallet provider not found.");
-        return;
-      }
-      const accounts = (await provider.request({ method: "eth_requestAccounts" })) as string[];
-      walletAddress = accounts[0];
-      signature = (await provider.request({ method: "personal_sign", params: [message, walletAddress] })) as string;
+    setStatus("Confirm the Monad transaction to record your Echo view.");
+    let txHash: `0x${string}`;
+    try {
+      const tx = await sendTransaction(
+        {
+          to: onchainWalletAddress as `0x${string}`,
+          value: 0n,
+          chainId: MONAD_MAINNET_CHAIN_ID,
+          data: stringToHex(
+            JSON.stringify({
+              app: "Perpl Echo",
+              type: "ECHO_CONSENSUS_4H",
+              analysisHash: props.analysisHash,
+              symbol: props.symbol,
+              snapshotTimestamp: props.timestamp,
+              voteValue
+            })
+          )
+        },
+        {
+          uiOptions: {
+            description: "Record your 4H view on Monad. This sends 0 MON and only costs gas.",
+            buttonText: "Record on Monad",
+            successHeader: "Echo recorded",
+            successDescription: "Your 4H view is now saved on Monad.",
+            isCancellable: true
+          }
+        }
+      );
+      txHash = tx.hash;
+    } catch {
+      setStatus("Monad transaction was not confirmed. No vote was recorded.");
+      return;
     }
 
     const response = await fetch("/api/echo-vote", {
@@ -153,8 +191,11 @@ export function EchoActions(props: EchoActionsProps) {
         browserId: browserId(),
         privyUserId: user.id,
         twitter: user.twitter,
-        walletAddress,
-        signature,
+        onchainTxHash: txHash,
+        onchainChainId: MONAD_MAINNET_CHAIN_ID,
+        onchainWalletAddress,
+        walletAddress: onchainWalletAddress,
+        signature: null,
         message
       })
     });
@@ -170,7 +211,7 @@ export function EchoActions(props: EchoActionsProps) {
     localStorage.setItem(CONSENSUS_KEY, JSON.stringify(votes));
     setLocalVote(voteValue);
     setConsensus(data.consensus);
-    setStatus(sign ? "Signed consensus saved. No transaction was sent." : "Your 4H view is saved to your X profile.");
+    setStatus("Your 4H view is saved on Monad and attached to your X profile.");
   }
 
   return (
@@ -214,12 +255,6 @@ export function EchoActions(props: EchoActionsProps) {
             Bearish 4H
           </Button>
         </div>
-        {walletEnabled ? (
-          <Button type="button" variant="ghost" disabled={Boolean(localVote) || consensus?.open === false} onClick={() => submitConsensus(localVote ?? "BULLISH", true)}>
-            <Wallet className="h-4 w-4" />
-            Sign Consensus
-          </Button>
-        ) : null}
         <ConsensusSummary consensus={consensus} localVote={localVote} />
       </div>
 
@@ -254,6 +289,24 @@ function ConsensusSummary({ consensus, localVote }: { consensus: ConsensusState 
         <div>
           Actual 4H move: {pct(consensus.actualReturnPercent, 2)} · Outcome {consensus.actualOutcome ?? "Unavailable"} · Community{" "}
           {consensus.communityResult ? resultLabel(consensus.communityResult) : "Pending"}
+        </div>
+      ) : null}
+      {consensus.votes?.some((vote) => vote.onchainTxHash) ? (
+        <div className="flex flex-wrap gap-2">
+          {consensus.votes
+            .filter((vote) => vote.onchainTxHash)
+            .slice(-3)
+            .map((vote) => (
+              <a
+                key={vote.id}
+                className="text-primary hover:text-primary/80"
+                href={monadTxUrl(vote.onchainTxHash) ?? undefined}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Monad record
+              </a>
+            ))}
         </div>
       ) : null}
     </div>
@@ -297,6 +350,12 @@ function ProfileStatus({
       </div>
     </div>
   );
+}
+
+function primaryWalletAddress(user: User | null | undefined, wallets: Array<{ address: string; type?: string; walletClientType?: string }>) {
+  const embedded = wallets.find((wallet) => wallet.type === "ethereum" && wallet.walletClientType?.startsWith("privy"));
+  const ethereum = wallets.find((wallet) => wallet.type === "ethereum");
+  return embedded?.address ?? ethereum?.address ?? user?.wallet?.address ?? null;
 }
 
 function readConsensusVotes(): Record<string, ConsensusVote> {

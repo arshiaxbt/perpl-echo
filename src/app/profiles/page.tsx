@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { BarChart3, TrendingDown, TrendingUp, UsersRound } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { monadTxUrl } from "@/lib/monad-chain";
 import { pct } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +32,7 @@ export default async function ProfilesPage() {
           voteValue: true,
           actualReturnPercent: true,
           actualOutcome: true,
+          onchainTxHash: true,
           createdAt: true
         }
       }
@@ -130,21 +132,32 @@ export default async function ProfilesPage() {
                     </div>
                     <div className="space-y-2">
                       {profile.votes.slice(0, 5).map((vote) => (
-                        <Link
+                        <div
                           key={vote.id}
-                          href={`/analysis/${vote.analysisHash}`}
                           className="flex items-center justify-between gap-3 rounded-sm border border-border bg-background/45 px-3 py-2 text-sm hover:border-primary/45"
                         >
                           <span className="min-w-0">
-                            <span className="font-semibold">{vote.symbol}</span>{" "}
+                            <Link className="font-semibold hover:text-primary" href={`/analysis/${vote.analysisHash}`}>
+                              {vote.symbol}
+                            </Link>{" "}
                             <span className={vote.voteValue === "BULLISH" ? "text-emerald-300" : "text-red-300"}>
                               {vote.voteValue === "BULLISH" ? "Bullish 4H" : "Bearish 4H"}
                             </span>
+                            {vote.onchainTxHash ? (
+                              <a
+                                className="ml-2 text-xs text-primary hover:text-primary/80"
+                                href={monadTxUrl(vote.onchainTxHash) ?? undefined}
+                                rel="noreferrer"
+                                target="_blank"
+                              >
+                                Monad
+                              </a>
+                            ) : null}
                           </span>
                           <span className="shrink-0 text-xs text-muted-foreground">
                             <LocalTime value={vote.createdAt} />
                           </span>
-                        </Link>
+                        </div>
                       ))}
                     </div>
                   </div>

@@ -39,6 +39,7 @@ The Vercel web target does not run worker loops and does not depend on Docker or
 - Echo Engine scoring for historical state similarity
 - Market pages, timeline replay, state graph, bookmarks, votes, and status views
 - Privy X login for public profiles and profile-backed Echo Consensus votes
+- Echo Consensus votes are recorded as zero-value Monad mainnet transactions with vote metadata in calldata
 - Health endpoints at `/api/health` and `/api/worker-status`
 - Data Quality Engine that hides rarity, confidence, regime statistics, and outcomes until the history is deep enough
 - Optional candle backfill for price, volume, volatility, and return history
@@ -97,12 +98,15 @@ Do not use Docker-only hostnames such as `postgres` in Vercel or GitHub Actions.
 For X login profiles, set:
 
 ```bash
+NEXT_PUBLIC_MONAD_CHAIN_ID=143
+NEXT_PUBLIC_MONAD_RPC_URL=https://rpc.monad.xyz
+NEXT_PUBLIC_MONAD_EXPLORER_URL=https://monadscan.com
 NEXT_PUBLIC_PRIVY_APP_ID=cmrdcjfsa01bp0cjv5nd3yk20
 PRIVY_APP_ID=cmrdcjfsa01bp0cjv5nd3yk20
 PRIVY_JWKS_URL=https://auth.privy.io/api/v1/apps/cmrdcjfsa01bp0cjv5nd3yk20/jwks.json
 ```
 
-The current Privy integration verifies access tokens with the public JWKS endpoint. It does not need the Privy app secret.
+The current Privy integration verifies access tokens with the public JWKS endpoint. It does not need the Privy app secret. Votes send a 0 MON transaction from the user's Privy wallet to the same wallet address on Monad mainnet; this creates an on-chain record and costs gas, but does not trade, transfer tokens, or request approvals.
 
 ## GitHub Actions Worker
 

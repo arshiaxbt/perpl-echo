@@ -57,6 +57,7 @@ NEXT_PUBLIC_APP_URL=https://perpl-echo.vercel.app
 NEXT_PUBLIC_ENABLE_WALLET_FEATURES=false
 NEXT_PUBLIC_MONAD_CHAIN_ID=143
 NEXT_PUBLIC_MONAD_RPC_URL=https://rpc.monad.xyz
+NEXT_PUBLIC_MONAD_EXPLORER_URL=https://monadscan.com
 ONCHAIN_INDEXER_ENABLED=false
 NEXT_PUBLIC_PRIVY_APP_ID=cmrdcjfsa01bp0cjv5nd3yk20
 PRIVY_APP_ID=cmrdcjfsa01bp0cjv5nd3yk20
@@ -65,7 +66,7 @@ PRIVY_JWKS_URL=https://auth.privy.io/api/v1/apps/cmrdcjfsa01bp0cjv5nd3yk20/jwks.
 
 Redeploy Vercel after changing env vars.
 
-Privy is used only for X login profiles and Echo Consensus identity. Do not add the app secret unless a future backend-admin Privy API feature requires it.
+Privy is used for X login profiles, embedded wallets, and Echo Consensus identity. Do not add the app secret unless a future backend-admin Privy API feature requires it. Echo Consensus votes are zero-value Monad mainnet transactions to the user's own wallet address; they cost gas but do not trade, transfer tokens, or request approvals.
 
 ## GitHub Actions Secrets
 
