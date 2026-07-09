@@ -17,6 +17,10 @@ on:
         description: "Backfill lookback days when backfill=true"
         required: false
         default: "7"
+      backfill_symbol:
+        description: "Optional single market symbol to backfill, for example SOL"
+        required: false
+        default: ""
 
 concurrency:
   group: perpl-echo-worker
@@ -43,6 +47,7 @@ jobs:
       BACKFILL_ON_START: ${{ github.event_name == 'workflow_dispatch' && inputs.backfill == 'true' && 'true' || secrets.BACKFILL_ON_START }}
       BACKFILL_FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.backfill == 'true' && 'true' || 'false' }}
       BACKFILL_DAYS: ${{ github.event_name == 'workflow_dispatch' && inputs.backfill == 'true' && inputs.backfill_days || secrets.BACKFILL_DAYS }}
+      BACKFILL_SYMBOL: ${{ github.event_name == 'workflow_dispatch' && inputs.backfill == 'true' && inputs.backfill_symbol || '' }}
       BACKFILL_MIN_SNAPSHOTS: ${{ secrets.BACKFILL_MIN_SNAPSHOTS }}
       RETENTION_ENABLED: "true"
       RAW_SNAPSHOT_RETENTION_DAYS: "30"

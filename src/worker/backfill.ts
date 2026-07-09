@@ -9,11 +9,21 @@ import type { PerplCandle, PerplMarket } from "@/lib/perpl";
 const RESOLUTION_SECONDS = 300;
 const CHUNK_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_DAYS = Number(process.env.BACKFILL_DAYS ?? 30);
+const DEFAULT_SYMBOL = process.env.BACKFILL_SYMBOL;
 
-export async function backfillHistoricalCandles(days = DEFAULT_DAYS) {
+export async function backfillHistoricalCandles(days = DEFAULT_DAYS, targetSymbol = DEFAULT_SYMBOL) {
   const client = new PerplApiClient();
   const context = await client.getContext();
-  const activeMarkets = context.markets.filter((market) => market.config?.is_open !== false);
+  const normalizedTargetSymbol = targetSymbol?.trim().toUpperCase();
+  const activeMarkets = context.markets.filter((market) => {
+    if (market.config?.is_open === false) return false;
+    return !normalizedTargetSymbol || effectiveMarketSymbol(market) === normalizedTargetSymbol;
+  });
+
+  if (normalizedTargetSymbol && activeMarkets.length === 0) {
+    throw new Error(`No active Perpl market found for symbol ${normalizedTargetSymbol}`);
+  }
+
   const endMs = Date.now();
   const startMs = endMs - days * 24 * 60 * 60 * 1000;
 
@@ -66,7 +76,8 @@ export async function backfillHistoricalCandles(days = DEFAULT_DAYS) {
 
 async function main() {
   const days = Number(process.argv[2] ?? DEFAULT_DAYS);
-  await backfillHistoricalCandles(days);
+  const symbol = process.argv[3] ?? DEFAULT_SYMBOL;
+  await backfillHistoricalCandles(days, symbol);
 }
 
 async function fetchCandleHistory(client: PerplApiClient, marketId: number, startMs: number, endMs: number) {

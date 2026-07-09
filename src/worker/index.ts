@@ -192,12 +192,12 @@ async function main() {
       console.log(`[backfill] starting days=${env.BACKFILL_DAYS} currentSnapshots=${snapshotCount}`);
       const startedAt = new Date();
       try {
-        await backfillHistoricalCandles(env.BACKFILL_DAYS);
+        await backfillHistoricalCandles(env.BACKFILL_DAYS, env.BACKFILL_SYMBOL);
         await recordBackfillRun({
           status: "success",
           startedAt,
           message: "startup candle backfill completed",
-          statsJson: jsonSafe({ days: env.BACKFILL_DAYS, snapshotCountBefore: snapshotCount })
+          statsJson: jsonSafe({ days: env.BACKFILL_DAYS, symbol: env.BACKFILL_SYMBOL || null, snapshotCountBefore: snapshotCount })
         });
         console.log("[backfill] completed");
       } catch (error) {

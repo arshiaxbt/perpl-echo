@@ -172,15 +172,19 @@ export async function analyzeMarketStateAt(
   });
   const latestOnchainIntelligence = await latestOnchainIntelligenceForMarket(market.id, 60);
   const fundingRates = classifiedHistorical.filter((snapshot) => !isBackfilled(snapshot)).map((snapshot) => snapshot.fundingRate);
+  const fundingRatesSorted = [...fundingRates].sort((a, b) => a - b);
   const percentile = fundingPercentile(current.fundingRate, fundingRates);
 
+  const outcomeIndex = buildOutcomeIndex(classifiedHistorical);
+  const intelligenceIndex = buildIntelligenceIndex(onchainIntelligence);
   const stats = buildStats([current, ...classifiedHistorical], onchainIntelligence);
-  const currentVector = vectorize(current, stats, latestOnchainIntelligence ?? nearestIntelligence(current, onchainIntelligence));
-  let matches = buildMatches(searchPool, current, currentVector, stats, onchainIntelligence, classifiedHistorical, percentile, memoryRarityPlaceholder(classifiedHistorical));
+  const currentOnchain = latestOnchainIntelligence ?? nearestIntelligence(current, intelligenceIndex);
+  const currentVector = vectorize(current, stats, currentOnchain);
+  let matches = buildMatches(searchPool, current, currentVector, stats, intelligenceIndex, outcomeIndex, fundingRatesSorted, percentile, memoryRarityPlaceholder(classifiedHistorical), currentOnchain);
   if (useRegimeOnly && matches.length < 10) {
     searchPool = classifiedHistorical;
     regimeWarning = "Low sample size for this regime, using broader historical search.";
-    matches = buildMatches(searchPool, current, currentVector, stats, onchainIntelligence, classifiedHistorical, percentile, memoryRarityPlaceholder(classifiedHistorical));
+    matches = buildMatches(searchPool, current, currentVector, stats, intelligenceIndex, outcomeIndex, fundingRatesSorted, percentile, memoryRarityPlaceholder(classifiedHistorical), currentOnchain);
   }
 
   const nearest = matches[0] ?? null;
@@ -192,16 +196,6 @@ export async function analyzeMarketStateAt(
     lastSimilarStateAt: nearest?.snapshot.timestamp ?? null
   });
 
-  const preliminaryDataQuality = buildDataQualityReport({
-    current,
-    historical: classifiedHistorical,
-    sameRegimeCount: sameRegime.length,
-    matchCount: matches.length,
-    onchainIntelligence: latestOnchainIntelligence,
-    onchainState: latestOnchainIntelligence ? "healthy" : "disabled"
-  });
-  const currentRarityForScoring = preliminaryDataQuality.analysisReadiness.hiddenMetrics.rarity ? null : memory.rarityScore;
-  matches = buildMatches(searchPool, current, currentVector, stats, onchainIntelligence, classifiedHistorical, percentile, currentRarityForScoring);
   const dataQuality = buildDataQualityReport({
     current,
     historical: classifiedHistorical,
@@ -279,19 +273,18 @@ function buildMatches(
   current: MarketSnapshot,
   currentVector: Partial<Record<FeatureName, number>>,
   stats: Stats,
-  onchainIntelligence: OnchainIntelligenceSnapshot[],
-  historical: MarketSnapshot[],
+  intelligenceIndex: IntelligenceIndex,
+  outcomeIndex: OutcomeIndex,
+  fundingRatesSorted: number[],
   currentFundingPercentile: number | null,
-  currentRarity: number | null
+  currentRarity: number | null,
+  currentOnchain: OnchainIntelligenceSnapshot | null
 ) {
-  const fundingRates = historical.filter((snapshot) => !isBackfilled(snapshot)).map((snapshot) => snapshot.fundingRate);
-  const currentOnchain = nearestIntelligence(current, onchainIntelligence);
-  const outcomeIndex = buildOutcomeIndex(historical);
   return searchPool
     .map((snapshot) => {
-      const candidateOnchain = nearestIntelligence(snapshot, onchainIntelligence);
+      const candidateOnchain = nearestIntelligence(snapshot, intelligenceIndex);
       const similarity = weightedSimilarity(currentVector, vectorize(snapshot, stats, candidateOnchain));
-      const candidateFundingPercentile = fundingPercentile(snapshot.fundingRate, fundingRates);
+      const candidateFundingPercentile = percentileSorted(snapshot.fundingRate, fundingRatesSorted);
       const candidateRarity = candidateFundingPercentile === null ? null : Math.max(candidateFundingPercentile, 100 - candidateFundingPercentile);
       const echoBreakdown = scoreEcho({
         current,
@@ -573,6 +566,11 @@ function percentile(value: number, values: number[]) {
   return (sample.filter((item) => item <= value).length / sample.length) * 100;
 }
 
+function percentileSorted(value: number, sortedValues: number[]) {
+  if (!sortedValues.length) return null;
+  return (upperBound(sortedValues, value) / sortedValues.length) * 100;
+}
+
 function avg(values: Array<number | null>) {
   const sample = values.filter(isFiniteNumber);
   return sample.length ? sample.reduce((sum, value) => sum + value, 0) / sample.length : null;
@@ -596,14 +594,24 @@ function isBackfilled(snapshot: Pick<MarketSnapshot, "rawJson">) {
   return raw?.source === "candle_backfill";
 }
 
-function nearestIntelligence(snapshot: MarketSnapshot, intelligence: OnchainIntelligenceSnapshot[]) {
+function buildIntelligenceIndex(intelligence: OnchainIntelligenceSnapshot[]) {
+  const sorted = [...intelligence].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  return {
+    snapshots: sorted,
+    timestamps: sorted.map((snapshot) => snapshot.timestamp.getTime())
+  };
+}
+
+type IntelligenceIndex = ReturnType<typeof buildIntelligenceIndex>;
+
+function nearestIntelligence(snapshot: MarketSnapshot, intelligence: IntelligenceIndex) {
+  if (!intelligence.snapshots.length) return null;
   const maxAgeMs = 6 * 60 * 60 * 1000;
-  return (
-    intelligence
-      .filter((item) => item.timestamp <= snapshot.timestamp)
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-      .find((item) => snapshot.timestamp.getTime() - item.timestamp.getTime() <= maxAgeMs) ?? null
-  );
+  const targetMs = snapshot.timestamp.getTime();
+  const itemIndex = upperBound(intelligence.timestamps, targetMs) - 1;
+  if (itemIndex < 0) return null;
+  const item = intelligence.snapshots[itemIndex];
+  return targetMs - item.timestamp.getTime() <= maxAgeMs ? item : null;
 }
 
 function computeFeatureCompleteness(snapshot: MarketSnapshot, onchain: OnchainIntelligenceSnapshot | null) {
@@ -650,6 +658,7 @@ export async function timelineForSymbol(symbol: string, range: string) {
     orderBy: { timestamp: "asc" },
     take: 3000
   });
+  const intelligenceIndex = buildIntelligenceIndex(intelligence);
 
   return {
     market,
@@ -657,7 +666,7 @@ export async function timelineForSymbol(symbol: string, range: string) {
     snapshots: snapshots.map((snapshot) => ({
       ...snapshot,
       regimeReasons: parseReasons(snapshot.regimeReasonsJson),
-      onchainIntelligence: nearestIntelligence(snapshot, intelligence)
+      onchainIntelligence: nearestIntelligence(snapshot, intelligenceIndex)
     }))
   };
 }

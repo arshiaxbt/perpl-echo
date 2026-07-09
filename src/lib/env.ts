@@ -59,6 +59,7 @@ const envSchema = z.object({
     .default("false")
     .transform((value) => value === "true"),
   BACKFILL_DAYS: z.coerce.number().positive().default(30),
+  BACKFILL_SYMBOL: z.string().default(""),
   BACKFILL_MIN_SNAPSHOTS: z.coerce.number().positive().default(100),
   RETENTION_ENABLED: z
     .enum(["true", "false"])

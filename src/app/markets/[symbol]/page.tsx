@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 import { ArrowLeft, GitBranch, History, Network } from "lucide-react";
 import { AnalysisButton } from "@/components/analysis-button";
 import { BrandLogo } from "@/components/brand-logo";
@@ -12,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
+import { prisma } from "@/lib/prisma";
 import { analyzeMarketState } from "@/lib/similarity";
 import { num, pct } from "@/lib/utils";
 
@@ -23,10 +25,121 @@ type Params = {
 
 export default async function MarketPage({ params }: Params) {
   const { symbol } = await params;
+  const market = await prisma.market.findUnique({
+    where: { symbol: symbol.toUpperCase() },
+    select: { symbol: true }
+  });
+
+  if (!market) {
+    notFound();
+  }
+
+  return (
+    <div className="space-y-6">
+      <LiveRefresh />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Button asChild variant="ghost">
+          <Link href="/">
+            <ArrowLeft className="h-4 w-4" />
+            Markets
+          </Link>
+        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="secondary">
+            <Link href={`/markets/${market.symbol}/timeline`}>
+              <History className="h-4 w-4" />
+              Timeline
+            </Link>
+          </Button>
+          <Button asChild variant="secondary">
+            <Link href={`/markets/${market.symbol}/graph`}>
+              <GitBranch className="h-4 w-4" />
+              State Graph
+            </Link>
+          </Button>
+          <AnalysisButton symbol={market.symbol} />
+        </div>
+      </div>
+
+      <Suspense fallback={<MarketAnalysisFallback symbol={market.symbol} />}>
+        <MarketAnalysis symbol={market.symbol} />
+      </Suspense>
+
+      <p className="text-xs text-muted-foreground">
+        Not financial advice. Historical similarity does not guarantee future outcomes.
+      </p>
+    </div>
+  );
+}
+
+function MarketAnalysisFallback({ symbol }: { symbol: string }) {
+  return (
+    <div className="space-y-6">
+      <section className="grid gap-4 lg:grid-cols-[1fr_0.9fr]">
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <Badge className="mb-3 border-primary/40 bg-primary/10 text-primary">Echo state</Badge>
+                <h1 className="text-3xl font-semibold leading-none md:text-5xl">{symbol}</h1>
+              </div>
+              <Badge className="border-border text-muted-foreground">Loading</Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 9 }).map((_, index) => (
+              <div key={index} className="h-20 animate-pulse rounded-sm border border-border bg-muted/35" />
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Average Outcome</CardTitle>
+              <BrandLogo className="h-5 w-5" />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="h-40 animate-pulse rounded-sm border border-border bg-muted/35" />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="h-20 animate-pulse rounded-sm border border-border bg-muted/35" />
+              <div className="h-20 animate-pulse rounded-sm border border-border bg-muted/35" />
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Historical Echo Matches</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="h-10 animate-pulse rounded-sm border border-border bg-muted/35" />
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+async function MarketAnalysis({ symbol }: { symbol: string }) {
   const result = await analyzeMarketState(symbol);
 
   if (!result) {
-    notFound();
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Market Analysis</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-sm border border-dashed p-6 text-sm text-muted-foreground">
+            Market analysis is unavailable until the worker has collected snapshots for this market.
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   const current = result.current;
@@ -65,32 +178,7 @@ export default async function MarketPage({ params }: Params) {
   ].filter((metric): metric is { label: string; value: string } => metric.value !== null);
 
   return (
-    <div className="space-y-6">
-      <LiveRefresh />
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Button asChild variant="ghost">
-          <Link href="/">
-            <ArrowLeft className="h-4 w-4" />
-            Markets
-          </Link>
-        </Button>
-        <div className="flex flex-wrap gap-2">
-          <Button asChild variant="secondary">
-            <Link href={`/markets/${result.market.symbol}/timeline`}>
-              <History className="h-4 w-4" />
-              Timeline
-            </Link>
-          </Button>
-          <Button asChild variant="secondary">
-            <Link href={`/markets/${result.market.symbol}/graph`}>
-              <GitBranch className="h-4 w-4" />
-              State Graph
-            </Link>
-          </Button>
-          <AnalysisButton symbol={result.market.symbol} />
-        </div>
-      </div>
-
+    <>
       <section className="grid gap-4 lg:grid-cols-[1fr_0.9fr]">
         <Card>
           <CardHeader>
@@ -446,9 +534,6 @@ export default async function MarketPage({ params }: Params) {
         </CardContent>
       </Card>
 
-      <p className="text-xs text-muted-foreground">
-        Not financial advice. Historical similarity does not guarantee future outcomes.
-      </p>
-    </div>
+    </>
   );
 }
