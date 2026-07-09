@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bookmark, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import Image from "next/image";
+import { Bookmark, TrendingDown, TrendingUp, UserRound, Wallet } from "lucide-react";
+import { getAccessToken, usePrivy, type User } from "@privy-io/react-auth";
 import { Button } from "@/components/ui/button";
 import { num, pct } from "@/lib/utils";
 
@@ -48,6 +50,7 @@ type EthereumProvider = {
 };
 
 export function EchoActions(props: EchoActionsProps) {
+  const { ready, authenticated, user, login } = usePrivy();
   const [bookmarked, setBookmarked] = useState(false);
   const [localVote, setLocalVote] = useState<ConsensusVote | null>(null);
   const [consensus, setConsensus] = useState<ConsensusState | null>(null);
@@ -110,6 +113,20 @@ export function EchoActions(props: EchoActionsProps) {
       setStatus("Consensus is closed for this market state.");
       return;
     }
+    if (!ready) {
+      setStatus("Profile login is loading.");
+      return;
+    }
+    if (!authenticated || !user) {
+      setStatus("Sign in with X to join Echo Consensus.");
+      login();
+      return;
+    }
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      setStatus("Could not verify your X profile. Please sign in again.");
+      return;
+    }
     let walletAddress: string | null = null;
     let signature: string | null = null;
     const message = `I expect ${voteValue.toLowerCase()} 4H outcome for this Perpl Echo market state: ${props.analysisHash}`;
@@ -126,7 +143,7 @@ export function EchoActions(props: EchoActionsProps) {
 
     const response = await fetch("/api/echo-vote", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({
         analysisHash: props.analysisHash,
         symbol: props.symbol,
@@ -134,6 +151,8 @@ export function EchoActions(props: EchoActionsProps) {
         horizonHours: HORIZON_HOURS,
         voteValue,
         browserId: browserId(),
+        privyUserId: user.id,
+        twitter: user.twitter,
         walletAddress,
         signature,
         message
@@ -151,7 +170,7 @@ export function EchoActions(props: EchoActionsProps) {
     localStorage.setItem(CONSENSUS_KEY, JSON.stringify(votes));
     setLocalVote(voteValue);
     setConsensus(data.consensus);
-    setStatus(sign ? "Signed consensus recorded. No transaction was sent." : "Consensus recorded for this market state.");
+    setStatus(sign ? "Signed consensus saved. No transaction was sent." : "Your 4H view is saved to your X profile.");
   }
 
   return (
@@ -174,6 +193,7 @@ export function EchoActions(props: EchoActionsProps) {
           <div className="text-sm font-semibold">Echo Consensus</div>
           <div className="text-xs text-muted-foreground">What does the community expect over the next 4 hours?</div>
         </div>
+        <ProfileStatus ready={ready} authenticated={authenticated} user={user} onLogin={login} />
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
@@ -236,6 +256,45 @@ function ConsensusSummary({ consensus, localVote }: { consensus: ConsensusState 
           {consensus.communityResult ? resultLabel(consensus.communityResult) : "Pending"}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function ProfileStatus({
+  ready,
+  authenticated,
+  user,
+  onLogin
+}: {
+  ready: boolean;
+  authenticated: boolean;
+  user: User | null | undefined;
+  onLogin: () => void;
+}) {
+  if (!ready) return <div className="rounded-sm border border-border bg-background/45 p-3 text-xs text-muted-foreground">Loading X login...</div>;
+  if (!authenticated || !user) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-border bg-background/45 p-3">
+        <div className="text-xs text-muted-foreground">Sign in with X to attach your 4H view to a public profile.</div>
+        <Button type="button" variant="secondary" size="sm" onClick={onLogin}>
+          <UserRound className="h-4 w-4" />
+          Sign in with X
+        </Button>
+      </div>
+    );
+  }
+  const twitter = user.twitter;
+  return (
+    <div className="flex items-center gap-3 rounded-sm border border-border bg-background/45 p-3">
+      {twitter?.profilePictureUrl ? (
+        <Image src={twitter.profilePictureUrl} alt="" width={32} height={32} className="h-8 w-8 rounded-full border border-border" />
+      ) : (
+        <UserRound className="h-6 w-6 text-muted-foreground" />
+      )}
+      <div className="min-w-0 text-xs">
+        <div className="truncate font-semibold text-foreground">{twitter?.name ?? twitter?.username ?? "Signed in"}</div>
+        {twitter?.username ? <div className="truncate text-muted-foreground">@{twitter.username}</div> : null}
+      </div>
     </div>
   );
 }

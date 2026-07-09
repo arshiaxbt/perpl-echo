@@ -58,9 +58,14 @@ NEXT_PUBLIC_ENABLE_WALLET_FEATURES=false
 NEXT_PUBLIC_MONAD_CHAIN_ID=143
 NEXT_PUBLIC_MONAD_RPC_URL=https://rpc.monad.xyz
 ONCHAIN_INDEXER_ENABLED=false
+NEXT_PUBLIC_PRIVY_APP_ID=cmrdcjfsa01bp0cjv5nd3yk20
+PRIVY_APP_ID=cmrdcjfsa01bp0cjv5nd3yk20
+PRIVY_JWKS_URL=https://auth.privy.io/api/v1/apps/cmrdcjfsa01bp0cjv5nd3yk20/jwks.json
 ```
 
 Redeploy Vercel after changing env vars.
+
+Privy is used only for X login profiles and Echo Consensus identity. Do not add the app secret unless a future backend-admin Privy API feature requires it.
 
 ## GitHub Actions Secrets
 

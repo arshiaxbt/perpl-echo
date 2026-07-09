@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { jsonSafePublic } from "@/lib/json";
+import { verifyPrivyRequest } from "@/lib/privy-auth";
+import { upsertUserProfile } from "@/lib/user-profile";
 import { buildConsensus, consensusSelect } from "./shared";
 
 const voteSchema = z.object({
@@ -13,7 +15,17 @@ const voteSchema = z.object({
   walletAddress: z.string().max(80).optional().nullable(),
   voteValue: z.enum(["BULLISH", "BEARISH"]),
   signature: z.string().max(4096).optional().nullable(),
-  message: z.string().max(4096).optional().nullable()
+  message: z.string().max(4096).optional().nullable(),
+  privyUserId: z.string().min(8).optional().nullable(),
+  twitter: z
+    .object({
+      subject: z.string().optional().nullable(),
+      username: z.string().optional().nullable(),
+      name: z.string().optional().nullable(),
+      profilePictureUrl: z.string().url().optional().nullable()
+    })
+    .optional()
+    .nullable()
 });
 
 export async function POST(request: Request) {
@@ -25,7 +37,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Consensus voting is closed for this market state." }, { status: 409 });
   }
 
+  const verified = await verifyPrivyRequest(request);
+  const profile =
+    verified && parsed.data.privyUserId === verified.privyUserId
+      ? await upsertUserProfile({
+          privyUserId: verified.privyUserId,
+          twitter: parsed.data.twitter,
+          rawJson: { privyUserId: verified.privyUserId, twitter: parsed.data.twitter }
+        })
+      : null;
+
   const identityFilters = [
+    profile ? { profileId: profile.id } : undefined,
+    verified ? { privyUserId: verified.privyUserId } : undefined,
     parsed.data.browserId ? { browserId: parsed.data.browserId } : undefined,
     parsed.data.walletAddress ? { walletAddress: parsed.data.walletAddress } : undefined
   ].filter((item): item is NonNullable<typeof item> => Boolean(item));
@@ -45,7 +69,7 @@ export async function POST(request: Request) {
       snapshotTimestamp,
       horizonHours: parsed.data.horizonHours
     });
-    return NextResponse.json(jsonSafePublic({ error: "Consensus already recorded for this browser or wallet.", consensus }), { status: 409 });
+    return NextResponse.json(jsonSafePublic({ error: "Consensus already recorded for this market state.", consensus }), { status: 409 });
   }
 
   const vote = await prisma.echoVote.create({
@@ -55,6 +79,11 @@ export async function POST(request: Request) {
       symbol: parsed.data.symbol.toUpperCase(),
       snapshotTimestamp,
       horizonHours: parsed.data.horizonHours,
+      profileId: profile?.id ?? null,
+      privyUserId: verified?.privyUserId ?? null,
+      twitterUsername: profile?.twitterUsername ?? null,
+      twitterName: profile?.twitterName ?? null,
+      twitterImageUrl: profile?.twitterImageUrl ?? null,
       browserId: parsed.data.browserId ?? null,
       walletAddress: parsed.data.walletAddress ?? null,
       voteValue: parsed.data.voteValue,

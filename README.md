@@ -38,6 +38,7 @@ The Vercel web target does not run worker loops and does not depend on Docker or
 - Deterministic regime classification, clustering, and market evolution transitions
 - Echo Engine scoring for historical state similarity
 - Market pages, timeline replay, state graph, bookmarks, votes, and status views
+- Privy X login for public profiles and profile-backed Echo Consensus votes
 - Health endpoints at `/api/health` and `/api/worker-status`
 - Data Quality Engine that hides rarity, confidence, regime statistics, and outcomes until the history is deep enough
 - Optional candle backfill for price, volume, volatility, and return history
@@ -92,6 +93,16 @@ curl http://localhost/api/worker-status
 - `.env.supabase.example`: Supabase-backed Vercel web target
 
 Do not use Docker-only hostnames such as `postgres` in Vercel or GitHub Actions. Use Supabase's transaction pooler for `DATABASE_URL` and session pooler for `DIRECT_URL`.
+
+For X login profiles, set:
+
+```bash
+NEXT_PUBLIC_PRIVY_APP_ID=cmrdcjfsa01bp0cjv5nd3yk20
+PRIVY_APP_ID=cmrdcjfsa01bp0cjv5nd3yk20
+PRIVY_JWKS_URL=https://auth.privy.io/api/v1/apps/cmrdcjfsa01bp0cjv5nd3yk20/jwks.json
+```
+
+The current Privy integration verifies access tokens with the public JWKS endpoint. It does not need the Privy app secret.
 
 ## GitHub Actions Worker
 

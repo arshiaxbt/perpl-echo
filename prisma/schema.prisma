@@ -166,6 +166,12 @@ model EchoVote {
   snapshotTimestamp   DateTime?
   horizonHours        Int       @default(4)
   voteValue           String
+  profileId           String?
+  profile             UserProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  privyUserId         String?
+  twitterUsername     String?
+  twitterName         String?
+  twitterImageUrl     String?
   browserId           String?
   walletAddress       String?
   signature           String?
@@ -177,8 +183,25 @@ model EchoVote {
 
   @@index([analysisHash, horizonHours])
   @@index([symbol, createdAt])
+  @@index([profileId, createdAt])
+  @@index([privyUserId, analysisHash, horizonHours])
   @@index([browserId, analysisHash, horizonHours])
   @@index([walletAddress, analysisHash, horizonHours])
+}
+
+model UserProfile {
+  id              String     @id @default(cuid())
+  privyUserId     String     @unique
+  twitterSubject  String?    @unique
+  twitterUsername String?
+  twitterName     String?
+  twitterImageUrl String?
+  rawJson         Json?
+  votes           EchoVote[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([twitterUsername])
 }
 
 model OnchainBlockCursor {
