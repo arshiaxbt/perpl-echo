@@ -172,7 +172,7 @@ model EchoVote {
   twitterUsername     String?
   twitterName         String?
   twitterImageUrl     String?
-  onchainTxHash       String?
+  onchainTxHash       String?   @unique
   onchainChainId      Int?
   onchainWalletAddress String?
   browserId           String?
@@ -187,8 +187,7 @@ model EchoVote {
   @@index([analysisHash, horizonHours])
   @@index([symbol, createdAt])
   @@index([profileId, createdAt])
-  @@index([privyUserId, analysisHash, horizonHours])
-  @@index([onchainTxHash])
+  @@unique([privyUserId, analysisHash, horizonHours])
   @@index([browserId, analysisHash, horizonHours])
   @@index([walletAddress, analysisHash, horizonHours])
 }

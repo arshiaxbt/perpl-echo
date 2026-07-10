@@ -4,9 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { Bookmark, TrendingDown, TrendingUp, UserRound, Wallet } from "lucide-react";
 import { getAccessToken, usePrivy, useSendTransaction, useWallets, type User } from "@privy-io/react-auth";
-import { stringToHex } from "viem";
 import { Button } from "@/components/ui/button";
-import { MONAD_MAINNET_CHAIN_ID, monadTxUrl } from "@/lib/monad-chain";
+import { encodeEchoVote, MONAD_MAINNET_CHAIN_ID, monadTxUrl } from "@/lib/monad-chain";
 import { num, pct } from "@/lib/utils";
 
 type BookmarkPayload = {
@@ -52,6 +51,7 @@ type ConsensusState = {
     onchainTxHash?: string | null;
     onchainWalletAddress?: string | null;
   }>;
+  viewerVote?: { voteValue: ConsensusVote } | null;
 };
 
 type EthereumProvider = {
@@ -86,13 +86,25 @@ export function EchoActions(props: EchoActionsProps) {
       symbol: props.symbol,
       snapshotTimestamp: props.timestamp
     });
-    fetch(`/api/echo-vote/${props.analysisHash}?${search.toString()}`)
+    const loadConsensus = async () => {
+      const token = authenticated ? await getAccessToken() : null;
+      return fetch(`/api/echo-vote/${props.analysisHash}?${search.toString()}`, {
+        headers: token ? { authorization: `Bearer ${token}` } : undefined
+      });
+    };
+    loadConsensus()
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (data) setConsensus(data);
+        if (!data) return;
+        setConsensus(data);
+        if (data.viewerVote?.voteValue) {
+          const nextVote = data.viewerVote.voteValue as ConsensusVote;
+          setLocalVote(nextVote);
+          localStorage.setItem(CONSENSUS_KEY, JSON.stringify({ ...readConsensusVotes(), [consensusKey]: nextVote }));
+        }
       })
       .catch(() => undefined);
-  }, [consensusKey, props.analysisHash, props.symbol, props.timestamp]);
+  }, [authenticated, consensusKey, props.analysisHash, props.symbol, props.timestamp, user?.id]);
 
   function saveBookmark(next: BookmarkPayload) {
     const bookmarks = readBookmarks().filter((item) => item.analysisHash !== next.analysisHash);
@@ -143,7 +155,6 @@ export function EchoActions(props: EchoActionsProps) {
       setStatus("Your Privy wallet is still being created. Try again in a moment.");
       return;
     }
-    const message = `I expect ${voteValue.toLowerCase()} 4H outcome for this Perpl Echo market state: ${props.analysisHash}`;
     setStatus("Confirm the Monad transaction to record your Echo view.");
     let txHash: `0x${string}`;
     try {
@@ -152,16 +163,12 @@ export function EchoActions(props: EchoActionsProps) {
           to: onchainWalletAddress as `0x${string}`,
           value: 0n,
           chainId: MONAD_MAINNET_CHAIN_ID,
-          data: stringToHex(
-            JSON.stringify({
-              app: "Perpl Echo",
-              type: "ECHO_CONSENSUS_4H",
-              analysisHash: props.analysisHash,
-              symbol: props.symbol,
-              snapshotTimestamp: props.timestamp,
-              voteValue
-            })
-          )
+          data: encodeEchoVote({
+            analysisHash: props.analysisHash,
+            symbol: props.symbol,
+            snapshotTimestamp: props.timestamp,
+            voteValue
+          })
         },
         {
           uiOptions: {
@@ -193,10 +200,7 @@ export function EchoActions(props: EchoActionsProps) {
         twitter: user.twitter,
         onchainTxHash: txHash,
         onchainChainId: MONAD_MAINNET_CHAIN_ID,
-        onchainWalletAddress,
-        walletAddress: onchainWalletAddress,
-        signature: null,
-        message
+        onchainWalletAddress
       })
     });
     const data = await response.json().catch(() => null);
@@ -239,7 +243,7 @@ export function EchoActions(props: EchoActionsProps) {
           <Button
             type="button"
             variant={localVote === "BULLISH" ? "default" : "secondary"}
-            disabled={Boolean(localVote) || consensus?.open === false}
+            disabled={!consensus || Boolean(localVote) || consensus.open === false}
             onClick={() => submitConsensus("BULLISH")}
           >
             <TrendingUp className="h-4 w-4" />
@@ -248,13 +252,14 @@ export function EchoActions(props: EchoActionsProps) {
           <Button
             type="button"
             variant={localVote === "BEARISH" ? "default" : "secondary"}
-            disabled={Boolean(localVote) || consensus?.open === false}
+            disabled={!consensus || Boolean(localVote) || consensus.open === false}
             onClick={() => submitConsensus("BEARISH")}
           >
             <TrendingDown className="h-4 w-4" />
             Bearish 4H
           </Button>
         </div>
+        <div className="text-xs text-muted-foreground">Recorded on Monad. Your Privy wallet needs a small MON balance for the network fee.</div>
         <ConsensusSummary consensus={consensus} localVote={localVote} />
       </div>
 

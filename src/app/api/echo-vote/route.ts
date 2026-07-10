@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { buildAnalysisHash } from "@/lib/analysis-hash";
+import { MONAD_MAINNET_CHAIN_ID } from "@/lib/monad-chain";
+import { verifyOnchainEchoVote } from "@/lib/onchain-echo-vote";
 import { prisma } from "@/lib/prisma";
 import { jsonSafePublic } from "@/lib/json";
 import { verifyPrivyRequest } from "@/lib/privy-auth";
@@ -12,14 +16,11 @@ const voteSchema = z.object({
   snapshotTimestamp: z.string().datetime(),
   horizonHours: z.literal(4).default(4),
   browserId: z.string().min(8).max(128).optional().nullable(),
-  walletAddress: z.string().max(80).optional().nullable(),
   voteValue: z.enum(["BULLISH", "BEARISH"]),
-  signature: z.string().max(4096).optional().nullable(),
-  message: z.string().max(4096).optional().nullable(),
-  onchainTxHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional().nullable(),
-  onchainChainId: z.number().int().positive().optional().nullable(),
-  onchainWalletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional().nullable(),
-  privyUserId: z.string().min(8).optional().nullable(),
+  onchainTxHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+  onchainChainId: z.literal(MONAD_MAINNET_CHAIN_ID),
+  onchainWalletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+  privyUserId: z.string().min(8),
   twitter: z
     .object({
       subject: z.string().optional().nullable(),
@@ -41,33 +42,53 @@ export async function POST(request: Request) {
   }
 
   const verified = await verifyPrivyRequest(request);
-  const profile =
-    verified && parsed.data.privyUserId === verified.privyUserId
-      ? await upsertUserProfile({
-          privyUserId: verified.privyUserId,
-          twitter: parsed.data.twitter,
-          rawJson: { privyUserId: verified.privyUserId, twitter: parsed.data.twitter }
-        })
-      : null;
-  if (profile && !parsed.data.onchainTxHash) {
-    return NextResponse.json({ error: "Confirm the Monad transaction to record this Echo view." }, { status: 400 });
+  if (!verified || parsed.data.privyUserId !== verified.privyUserId) {
+    return NextResponse.json({ error: "Sign in with X before recording an Echo view." }, { status: 401 });
+  }
+
+  const symbol = parsed.data.symbol.toUpperCase();
+  const market = await prisma.market.findUnique({ where: { symbol }, select: { id: true } });
+  const snapshot = market
+    ? await prisma.marketSnapshot.findUnique({ where: { marketId_timestamp: { marketId: market.id, timestamp: snapshotTimestamp } } })
+    : null;
+  if (!snapshot || buildAnalysisHash({ symbol, snapshot }) !== parsed.data.analysisHash) {
+    return NextResponse.json({ error: "This Echo does not match a stored market snapshot." }, { status: 400 });
+  }
+
+  const profile = await upsertUserProfile({
+    privyUserId: verified.privyUserId,
+    twitter: parsed.data.twitter,
+    rawJson: { privyUserId: verified.privyUserId, twitter: parsed.data.twitter }
+  });
+
+  try {
+    await verifyOnchainEchoVote({
+      txHash: parsed.data.onchainTxHash as `0x${string}`,
+      walletAddress: parsed.data.onchainWalletAddress,
+      chainId: parsed.data.onchainChainId,
+      analysisHash: parsed.data.analysisHash,
+      symbol,
+      snapshotTimestamp: snapshotTimestamp.toISOString(),
+      voteValue: parsed.data.voteValue
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Monad transaction could not be verified.";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 
   const identityFilters = [
-    profile ? { profileId: profile.id } : undefined,
-    verified ? { privyUserId: verified.privyUserId } : undefined,
+    { profileId: profile.id },
+    { privyUserId: verified.privyUserId },
     parsed.data.browserId ? { browserId: parsed.data.browserId } : undefined,
-    parsed.data.walletAddress ? { walletAddress: parsed.data.walletAddress } : undefined
+    { walletAddress: parsed.data.onchainWalletAddress }
   ].filter((item): item is NonNullable<typeof item> => Boolean(item));
-  const duplicate = identityFilters.length
-    ? await prisma.echoVote.findFirst({
-        where: {
-          analysisHash: parsed.data.analysisHash,
-          horizonHours: parsed.data.horizonHours,
-          OR: identityFilters
-        }
-      })
-    : null;
+  const duplicate = await prisma.echoVote.findFirst({
+    where: {
+      analysisHash: parsed.data.analysisHash,
+      horizonHours: parsed.data.horizonHours,
+      OR: identityFilters
+    }
+  });
   if (duplicate) {
     const consensus = await buildConsensus({
       analysisHash: parsed.data.analysisHash,
@@ -78,28 +99,35 @@ export async function POST(request: Request) {
     return NextResponse.json(jsonSafePublic({ error: "Consensus already recorded for this market state.", consensus }), { status: 409 });
   }
 
-  const vote = await prisma.echoVote.create({
-    select: consensusSelect,
-    data: {
-      analysisHash: parsed.data.analysisHash,
-      symbol: parsed.data.symbol.toUpperCase(),
-      snapshotTimestamp,
-      horizonHours: parsed.data.horizonHours,
-      profileId: profile?.id ?? null,
-      privyUserId: verified?.privyUserId ?? null,
-      twitterUsername: profile?.twitterUsername ?? null,
-      twitterName: profile?.twitterName ?? null,
-      twitterImageUrl: profile?.twitterImageUrl ?? null,
-      onchainTxHash: parsed.data.onchainTxHash ?? null,
-      onchainChainId: parsed.data.onchainChainId ?? null,
-      onchainWalletAddress: parsed.data.onchainWalletAddress ?? null,
-      browserId: parsed.data.browserId ?? null,
-      walletAddress: parsed.data.walletAddress ?? null,
-      voteValue: parsed.data.voteValue,
-      signature: parsed.data.signature ?? null,
-      message: parsed.data.message ?? null
+  let vote;
+  try {
+    vote = await prisma.echoVote.create({
+      select: consensusSelect,
+      data: {
+        analysisHash: parsed.data.analysisHash,
+        symbol,
+        snapshotTimestamp,
+        horizonHours: parsed.data.horizonHours,
+        profileId: profile.id,
+        privyUserId: verified.privyUserId,
+        twitterUsername: profile.twitterUsername,
+        twitterName: profile.twitterName,
+        twitterImageUrl: profile.twitterImageUrl,
+        onchainTxHash: parsed.data.onchainTxHash,
+        onchainChainId: parsed.data.onchainChainId,
+        onchainWalletAddress: parsed.data.onchainWalletAddress,
+        browserId: parsed.data.browserId ?? null,
+        walletAddress: parsed.data.onchainWalletAddress,
+        voteValue: parsed.data.voteValue
+      }
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      const consensus = await buildConsensus({ analysisHash: parsed.data.analysisHash, symbol, snapshotTimestamp, horizonHours: 4 });
+      return NextResponse.json(jsonSafePublic({ error: "Consensus already recorded for this market state.", consensus }), { status: 409 });
     }
-  });
+    throw error;
+  }
 
   const consensus = await buildConsensus({
     analysisHash: parsed.data.analysisHash,

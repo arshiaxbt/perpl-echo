@@ -14,6 +14,7 @@ export function AppPrivyProvider({ children }: { children: React.ReactNode }) {
         supportedChains: [monadMainnet],
         defaultChain: monadMainnet,
         embeddedWallets: {
+          showWalletUIs: true,
           ethereum: {
             createOnLogin: "all-users"
           }

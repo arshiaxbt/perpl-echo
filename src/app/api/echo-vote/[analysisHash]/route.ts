@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { verifyPrivyRequest } from "@/lib/privy-auth";
 import { buildConsensus } from "../shared";
 
 type Params = {
@@ -17,5 +19,13 @@ export async function GET(request: Request, { params }: Params) {
     snapshotTimestamp: snapshotTimestamp && Number.isFinite(snapshotTimestamp.getTime()) ? snapshotTimestamp : null,
     horizonHours: 4
   });
-  return NextResponse.json(consensus);
+  const verified = await verifyPrivyRequest(request);
+  const viewerVote = verified
+    ? await prisma.echoVote.findFirst({
+        where: { analysisHash, horizonHours: 4, privyUserId: verified.privyUserId },
+        orderBy: { createdAt: "desc" },
+        select: { voteValue: true }
+      })
+    : null;
+  return NextResponse.json({ ...consensus, viewerVote });
 }
